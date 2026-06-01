@@ -221,3 +221,25 @@
                            "Origin: https://evil.example\r\n"
                            "Content-Length: " (number-to-string (length body)) "\r\n")))
      (should (= 403 (car (org-clipper--http-handle headers body)))))))
+
+
+;;; --- Phase 3: image attachments ---
+;; 1x1 transparent PNG, base64.
+(defconst org-clipper-test--png
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+(ert-deftest org-clipper-test-attach-images-writes-and-maps ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
+       (with-current-buffer (find-file-noselect tmp)
+         (let ((org-mode-hook nil)) (org-mode))
+         (goto-char (point-max)) (insert "* clip\n") (org-back-to-heading t)
+         (org-id-get-create)
+         (let ((map (org-clipper--attach-images
+                     (list (list :url "https://x/a.png" :filename "a.png"
+                                 :contentType "image/png" :dataBase64 org-clipper-test--png)))))
+           (should (equal map '(("https://x/a.png" . "a.png"))))
+           (should (file-exists-p (expand-file-name "a.png" (org-attach-dir))))
+           (should (> (file-attribute-size (file-attributes (expand-file-name "a.png" (org-attach-dir)))) 0)))
+         (set-buffer-modified-p nil))))))

@@ -204,6 +204,44 @@ Return its outline level."
     (beginning-of-line)
     (when (looking-at "^\\*") (org-current-level))))
 
+(defun org-clipper--attach-filename (raw used)
+  "A safe, unique filename for RAW given USED (hash of taken names)."
+  (let* ((base (file-name-nondirectory (or raw "image")))
+         (base (replace-regexp-in-string "[^A-Za-z0-9._-]+" "_" base))
+         (base (if (string-empty-p base) "image" base))
+         (name base) (n 1))
+    (while (gethash name used)
+      (setq name (format "%s-%d%s"
+                         (file-name-sans-extension base) n
+                         (if (file-name-extension base)
+                             (concat "." (file-name-extension base)) ""))
+            n (1+ n)))
+    name))
+
+(defun org-clipper--attach-images (images)
+  "With point on the current entry, write IMAGES (plists :url :filename
+:dataBase64) into the entry's org-attach dir.  Return an alist (URL . FILE)
+of successfully-written images; failures are skipped."
+  (require 'org-attach)
+  (let ((dir (org-attach-dir t)) (used (make-hash-table :test 'equal)) (map '()))
+    (dolist (img images)
+      (let ((url (plist-get img :url))
+            (b64 (plist-get img :dataBase64))
+            (name (org-clipper--attach-filename (plist-get img :filename)
+                                                (make-hash-table :test 'equal))))
+        (setq name (org-clipper--attach-filename name used))
+        (condition-case nil
+            (when (and url b64 (> (length b64) 0))
+              (let ((coding-system-for-write 'binary)
+                    (path (expand-file-name name dir)))
+                (with-temp-file path
+                  (set-buffer-multibyte nil)
+                  (insert (base64-decode-string b64))))
+              (puthash name t used)
+              (push (cons url name) map))
+          (error nil))))
+    (nreverse map)))
+
 (defun org-clipper--insert-clip (clip)
   "Insert web-clip plist CLIP into the target file; return the file path.
 Plist keys: :template :url :title :body :tags :author :published
