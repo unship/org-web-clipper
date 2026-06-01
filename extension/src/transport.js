@@ -10,11 +10,16 @@ export async function dispatchCapture(payload, cfg = {}) {
 
 const isMain = typeof process !== "undefined" && process.argv[1] &&
   import.meta.url === new URL(`file://${process.argv[1]}`).href;
+// NOTE: the self-test must NOT use top-level `await` — this module is imported
+// by the MV3 background service worker, and a top-level-await module fails SW
+// registration ("Status code: 3"). Keep the awaits inside an async IIFE.
 if (isMain) {
-  let ok = true; const check = (c, m) => { if (!c) { ok = false; console.error("FAIL:", m); } else console.log("PASS:", m); };
-  try { await dispatchCapture({ url: "u" }, { transport: "http" }); check(false, "http throws"); }
-  catch (e) { check(/Phase 2/.test(e.message), "http throws Phase-2 error"); }
-  try { await dispatchCapture({ url: "u" }, { transport: "nope" }); check(false, "unknown throws"); }
-  catch (e) { check(/unknown transport/.test(e.message), "unknown transport throws"); }
-  process.exitCode = ok ? 0 : 1;
+  (async () => {
+    let ok = true; const check = (c, m) => { if (!c) { ok = false; console.error("FAIL:", m); } else console.log("PASS:", m); };
+    try { await dispatchCapture({ url: "u" }, { transport: "http" }); check(false, "http throws"); }
+    catch (e) { check(/Phase 2/.test(e.message), "http throws Phase-2 error"); }
+    try { await dispatchCapture({ url: "u" }, { transport: "nope" }); check(false, "unknown throws"); }
+    catch (e) { check(/unknown transport/.test(e.message), "unknown transport throws"); }
+    process.exitCode = ok ? 0 : 1;
+  })();
 }
