@@ -159,13 +159,6 @@
 
     <a class="options" href="#" id="open-options">Options &rsaquo;</a>
 
-    <!-- Hidden dispatcher: setting its src to org-protocol://… triggers the
-         OS handler from popup-context (same origin/initiator across
-         dispatches, so Chrome's "Always allow" sticks after the first
-         confirmation). No new tab or window opens. -->
-    <iframe id="dispatcher" src="about:blank"
-            style="display:none;width:0;height:0;border:0"></iframe>
-
     <script src="popup.js" type="module"></script>
   </body>
 </html>

@@ -14,7 +14,6 @@ const els = {
   cancel: $("cancel-btn"),
   status: $("status"),
   opts:   $("open-options"),
-  dispatcher: $("dispatcher"),
 };
 
 function setStatus(kind, text) {
@@ -62,23 +61,12 @@ async function clip() {
       selectionOnly: els.selOnly.checked,
     });
 
-    if (resp && resp.ok && resp.url) {
-      // Dispatch from popup context via a hidden iframe: same origin across
-      // every clip, so Chrome's "Always allow" sticks; no tab/window flash;
-      // OS handler is triggered without disrupting any visible tab.
-      els.dispatcher.src = resp.url;
-      const size = resp.urlBytes ? `${resp.urlBytes.toLocaleString()} byte` : "";
-      const title = resp.title ? ` "${resp.title.slice(0, 60)}${resp.title.length > 60 ? "…" : ""}"` : "";
-      setStatus(
-        "ok",
-        `Dispatched ${size} URL to Emacs${title}.\n` +
-        `If this is the first clip ever, Chrome will ask whether to open ` +
-        `Emacs Client — tick "Always allow" and click Open. ` +
-        `Verify the heading appeared in your Org file.`,
-      );
-      // Keep popup open briefly so the iframe load can fire the OS handler
-      // before the popup closes (which would tear down the iframe).
-      setTimeout(() => { /* let user see status; they can close manually */ }, 100);
+    if (resp && resp.ok) {
+      // The background service worker already performed the dispatch (it opens
+      // the org-protocol:// URL in a throwaway tab). The popup only renders
+      // status. The first clip ever will prompt Chrome to confirm opening
+      // Emacs Client — tick "Always allow".
+      setStatus("ok", `Sent to Emacs (${resp.urlBytes ?? ""} bytes).`);
     } else {
       setStatus("err", (resp && resp.error) || "Unknown error.");
     }

@@ -5,7 +5,7 @@ const DEFAULTS = {
   defaultTags:     "",
   captureTemplate: "w",
   headingMin:      3,
-  subprotocol:     "capture",
+  transport:       "org-protocol",
 };
 
 const FIELDS = Object.keys(DEFAULTS);
@@ -25,7 +25,7 @@ function readForm() {
     v[k] = el.type === "number" ? Number(el.value) : el.value;
   }
   v.captureTemplate = (v.captureTemplate || "").trim() || DEFAULTS.captureTemplate;
-  v.subprotocol     = (v.subprotocol     || "").trim() || DEFAULTS.subprotocol;
+  v.transport       = (v.transport       || "").trim() || DEFAULTS.transport;
   v.headingMin = Number.isFinite(v.headingMin)
     ? Math.max(1, Math.min(8, v.headingMin))
     : DEFAULTS.headingMin;

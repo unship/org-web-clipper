@@ -70,7 +70,7 @@
         color: var(--muted);
         margin: 12px 0 4px;
       }
-      input[type="text"], input[type="number"] {
+      input[type="text"], input[type="number"], select {
         width: 100%;
         box-sizing: border-box;
         padding: 6px 8px;
@@ -80,7 +80,7 @@
         border: 1px solid var(--border);
         border-radius: 4px;
       }
-      input[type="text"]:focus, input[type="number"]:focus {
+      input[type="text"]:focus, input[type="number"]:focus, select:focus {
         outline: none;
         border-color: var(--accent);
       }
@@ -171,12 +171,17 @@
           outer template heads land at <code>**</code>).
         </p>
 
-        <label for="subprotocol">org-protocol sub-protocol</label>
-        <input id="subprotocol" type="text" placeholder="capture" />
+        <label>Transport
+          <select id="transport">
+            <option value="org-protocol">org-protocol (default)</option>
+            <option value="http">HTTP (Phase 2)</option>
+          </select>
+        </label>
         <p class="hint">
-          The path used in <code>org-protocol://<em>SUB</em>?…</code>.
-          Default <code>capture</code> (the built-in handler shipped with
-          Org). Change only if you have a custom sub-protocol registered.
+          How clips reach Emacs. <code>org-protocol</code> (default) opens an
+          <code>org-protocol://org-clipper?…</code> URL — zero extra process.
+          <code>HTTP</code> is Phase 2. Must match
+          <code>org-clipper-transport</code> in your Emacs config.
         </p>
 
         <div class="actions">
