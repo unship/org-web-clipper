@@ -119,3 +119,28 @@
 
 (ert-deftest org-clipper-test-no-org-capture-template-registration ()
   (should-not (fboundp 'org-clipper-register-capture-template)))
+
+(ert-deftest org-clipper-test-relevel-compresses-gaps ()
+  ;; source jumps ** -> **** (h2 -> h4); base 3 => *** -> **** (gapless, no *****)
+  (should (equal (org-clipper--relevel-body "** A\n\ntext\n\n**** deep\n\n** B" 3)
+                 "*** A\n\ntext\n\n**** deep\n\n*** B")))
+
+(ert-deftest org-clipper-test-relevel-base-follows-level ()
+  (should (equal (org-clipper--relevel-body "** A\n\n*** B" 4)
+                 "**** A\n\n***** B")))
+
+(ert-deftest org-clipper-test-relevel-ignores-src-blocks ()
+  (should (equal (org-clipper--relevel-body "** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC" 3)
+                 "*** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC")))
+
+(ert-deftest org-clipper-test-insert-clip-headings-contiguous ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (org-clipper--insert-clip (list :title "T" :url "u" :body "** Sec\n\nx\n\n**** Deep"))
+     (with-temp-buffer
+       (insert-file-contents tmp)
+       (let ((s (buffer-string)))
+         (should (string-match-p "^\\*\\* T " s))           ; clip title at level 2
+         (should (string-match-p "^\\*\\*\\* Sec$" s))       ; body starts at level 3
+         (should (string-match-p "^\\*\\*\\*\\* Deep$" s))   ; gap 2->4 compressed to 3->4
+         (should-not (string-match-p "^\\*\\*\\*\\*\\* " s))))))) ; no level-5

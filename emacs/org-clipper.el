@@ -97,6 +97,27 @@ manual `g'."
       (format "[%s]" (string-trim created))
     (format-time-string "[%Y-%m-%d %a]")))
 
+(defun org-clipper--relevel-body (body base)
+  "Re-level Org headings in BODY so the shallowest becomes BASE and nesting is
+gapless: each deeper source level maps to parent-output + 1, regardless of
+skips.  Lines inside #+BEGIN_.../#+END_... blocks and non-heading lines are
+left untouched."
+  (let ((stack '()) (in-block nil) out)
+    (dolist (ln (split-string body "\n"))
+      (cond
+       ((string-match "\\`[ \t]*#\\+BEGIN_" ln) (setq in-block t) (push ln out))
+       ((string-match "\\`[ \t]*#\\+END_" ln)   (setq in-block nil) (push ln out))
+       ((and (not in-block) (string-match "\\`\\(\\*+\\)[ \t]+\\(.*\\)\\'" ln))
+        (let ((src (length (match-string 1 ln))) (text (match-string 2 ln)) lvl)
+          (while (and stack (> (caar stack) src)) (pop stack))
+          (let ((top (car stack)))
+            (cond ((null top)        (setq lvl base) (push (cons src base) stack))
+                  ((= (car top) src) (setq lvl (cdr top)))
+                  (t                 (setq lvl (1+ (cdr top))) (push (cons src lvl) stack))))
+          (push (concat (make-string lvl ?*) " " text) out)))
+       (t (push ln out))))
+    (mapconcat #'identity (nreverse out) "\n")))
+
 (defun org-clipper--format-entry (level title tags clip)
   "Return the Org entry text for CLIP at heading LEVEL. No :ID: yet (added
 after insertion).  Empty optional properties are omitted.  TAGS is a list."
@@ -115,7 +136,7 @@ after insertion).  Empty optional properties are omitted.  TAGS is a list."
                     (replace-regexp-in-string "[\n\r]+" " " (string-trim description)))
               props)))
     (setq props (nreverse props))
-    (let ((body (or (plist-get clip :body) "")))
+    (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") (1+ level))))
       (concat
        (make-string level ?*) " " (string-trim (or title "(untitled)"))
        (let ((ts (org-clipper--tags-string tags)))
