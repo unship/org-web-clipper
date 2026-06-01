@@ -217,6 +217,29 @@ fresh :ID:."
     file))
 
 
+;;; org-protocol sub-protocol
+
+(require 'org-protocol)
+
+(defun org-clipper--protocol-capture (info)
+  "Handle `org-protocol://org-clipper?...'.  INFO is the raw query string;
+`org-protocol-parse-parameters' percent-decodes each value to UTF-8."
+  (let* ((p (org-protocol-parse-parameters info t))
+         (tags (let ((tg (plist-get p :tags)))
+                 (and tg (split-string tg "[,]+" t "[ \t]+")))))
+    (org-clipper--insert-clip
+     (list :template (plist-get p :template) :url (plist-get p :url)
+           :title (plist-get p :title) :body (or (plist-get p :body) "")
+           :tags tags :author (plist-get p :author)
+           :published (plist-get p :published)
+           :description (plist-get p :description) :created (plist-get p :created)))
+    nil))
+
+(add-to-list 'org-protocol-protocol-alist
+             '("org-clipper" :protocol "org-clipper"
+               :function org-clipper--protocol-capture :kill-client t))
+
+
 ;;; Visiting and refiling
 
 ;;;###autoload

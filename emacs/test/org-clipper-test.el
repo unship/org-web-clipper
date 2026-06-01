@@ -90,3 +90,21 @@
        (goto-char (point-min))
        (re-search-forward "^\\*\\* \\(First\\|Second\\)")
        (should (equal (match-string 1) "Second"))))))   ; newest on top
+
+(ert-deftest org-clipper-test-protocol-capture-decodes-and-inserts ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (let ((info (concat "template=w"
+                         "&url=" (url-hexify-string "https://x/测试")
+                         "&title=" (url-hexify-string "标题 ☕")
+                         "&tags=clippings,rust"
+                         "&author=" (url-hexify-string "David Rosa")
+                         "&body=" (url-hexify-string "*** s\n你好"))))
+       (org-clipper--protocol-capture info)
+       (with-temp-buffer
+         (insert-file-contents tmp)
+         (let ((s (buffer-string)))
+           (should (string-match-p "^\\*\\* 标题 ☕  :clippings:rust:$" s))
+           (should (string-match-p "^:SOURCE: https://x/测试$" s))
+           (should (string-match-p "^:AUTHOR: David Rosa$" s))
+           (should (string-match-p "你好" s))))))))
