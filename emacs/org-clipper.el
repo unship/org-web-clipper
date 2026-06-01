@@ -136,6 +136,37 @@ after insertion).  Empty optional properties are omitted.  TAGS is a list."
        (if (string-suffix-p "\n" body) body (concat body "\n"))))))
 
 
+;;; Target file + lean persistent buffer
+
+(defcustom org-clipper-monthly-dir
+  (expand-file-name "inbox" (or (bound-and-true-p org-directory) "~/org"))
+  "Directory holding monthly clip files (YYYY-MM.org)."
+  :type 'directory :group 'org-clipper)
+
+(defcustom org-clipper-lean-capture t
+  "Open the clip target with `org-mode-hook' suppressed and keep it alive,
+so captures never re-run heavy org-mode setup or attach LSP/grammar tools."
+  :type 'boolean :group 'org-clipper)
+
+(defun org-clipper--current-target-file ()
+  "Absolute path the next clip lands in (override or monthly).  Makes its dir."
+  (let* ((path (if org-clipper-target-file
+                   (expand-file-name org-clipper-target-file)
+                 (expand-file-name (format-time-string "%Y-%m.org")
+                                   org-clipper-monthly-dir)))
+         (dir (file-name-directory path)))
+    (unless (file-directory-p dir) (make-directory dir t))
+    path))
+
+(defun org-clipper--capture-target-file ()
+  "Ensure the target file is visited in a lean, kept-alive buffer; return path."
+  (let ((file (org-clipper--current-target-file)))
+    (when (and org-clipper-lean-capture (not (find-buffer-visiting file)))
+      (let ((org-mode-hook nil) (org-inhibit-startup t))
+        (find-file-noselect file)))
+    file))
+
+
 ;;; Visiting and refiling
 
 ;;;###autoload
