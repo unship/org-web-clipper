@@ -53,3 +53,40 @@
       (let ((b (find-buffer-visiting tmp)))
         (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
       (delete-file tmp))))
+
+(defun org-clipper-test--with-target (fn)
+  (let* ((tmp (make-temp-file "oc-i" nil ".org"))
+         (org-clipper-target-file tmp)
+         (org-clipper-default-tags '("clippings")))
+    (unwind-protect (funcall fn tmp)
+      (let ((b (find-buffer-visiting tmp)))
+        (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
+      (delete-file tmp))))
+
+(ert-deftest org-clipper-test-insert-clip-writes-metadata-and-id ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (org-clipper--insert-clip
+      (list :title "中文标题 café ☕" :url "https://x/测试"
+            :author "David Rosa" :description "Desc." :created "2026-03-28"
+            :tags '("rust") :body "*** sec\n你好,世界 😀"))
+     (with-temp-buffer
+       (insert-file-contents tmp)
+       (let ((s (buffer-string)))
+         (should (string-match-p "^\\* Web clips$" s))
+         (should (string-match-p "^\\*\\* 中文标题 café ☕  :clippings:rust:$" s))
+         (should (string-match-p "^:ID: +[-0-9a-fA-F]+$" s))
+         (should (string-match-p "^:SOURCE: https://x/测试$" s))
+         (should (string-match-p "^:AUTHOR: David Rosa$" s))
+         (should (string-match-p "你好,世界 😀" s)))))))
+
+(ert-deftest org-clipper-test-insert-clip-prepends-newest-first ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (org-clipper--insert-clip (list :title "First" :url "u1" :body "b1"))
+     (org-clipper--insert-clip (list :title "Second" :url "u2" :body "b2"))
+     (with-temp-buffer
+       (insert-file-contents tmp)
+       (goto-char (point-min))
+       (re-search-forward "^\\*\\* \\(First\\|Second\\)")
+       (should (equal (match-string 1) "Second"))))))   ; newest on top

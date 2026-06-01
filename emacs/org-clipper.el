@@ -167,6 +167,56 @@ so captures never re-run heavy org-mode setup or attach LSP/grammar tools."
     file))
 
 
+;;; Capture core
+
+(require 'org-id)
+
+(defcustom org-clipper-prepend t
+  "When non-nil insert each clip as the FIRST child of the headline."
+  :type 'boolean :group 'org-clipper)
+
+(defun org-clipper--goto-target-headline ()
+  "Move point to `org-clipper-target-headline', creating it if missing.
+Return its outline level."
+  (goto-char (point-min))
+  (let ((case-fold-search t))
+    (unless (re-search-forward
+             (format "^\\*+[ \t]+%s[ \t]*$" (regexp-quote org-clipper-target-headline))
+             nil t)
+      (goto-char (point-max))
+      (unless (bolp) (insert "\n"))
+      (insert "* " org-clipper-target-headline "\n"))
+    (beginning-of-line)
+    (when (looking-at "^\\*") (org-current-level))))
+
+(defun org-clipper--insert-clip (clip)
+  "Insert web-clip plist CLIP into the target file; return the file path.
+Plist keys: :template :url :title :body :tags :author :published
+:description :created.  Bypasses org-capture; writes a metadata drawer and a
+fresh :ID:."
+  (let* ((file (org-clipper--capture-target-file))
+         (buf  (find-buffer-visiting file))
+         (tags (org-clipper--merge-tags (plist-get clip :tags))))
+    (with-current-buffer buf
+      (org-with-wide-buffer
+       (let* ((hlevel (or (org-clipper--goto-target-headline) 1))
+              (entry  (org-clipper--format-entry
+                       (1+ hlevel) (plist-get clip :title) tags clip))
+              (pos    (save-excursion
+                        (if org-clipper-prepend
+                            (progn (org-end-of-meta-data t) (point))
+                          (org-end-of-subtree t t)
+                          (unless (bolp) (insert "\n"))
+                          (point)))))
+         (goto-char pos)
+         (insert entry)
+         (goto-char pos)
+         (org-back-to-heading t)
+         (org-id-get-create)))
+      (save-buffer))
+    file))
+
+
 ;;; Visiting and refiling
 
 ;;;###autoload
