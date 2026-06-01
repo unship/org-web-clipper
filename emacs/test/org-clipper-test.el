@@ -243,3 +243,49 @@
            (should (file-exists-p (expand-file-name "a.png" (org-attach-dir))))
            (should (> (file-attribute-size (file-attributes (expand-file-name "a.png" (org-attach-dir)))) 0)))
          (set-buffer-modified-p nil))))))
+
+(ert-deftest org-clipper-test-insert-clip-embeds-images ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
+       (org-clipper--insert-clip
+        (list :title "T" :url "u"
+              :body "[[https://x/a.png]] and [[https://x/missing.png]]"
+              :images (list (list :url "https://x/a.png" :filename "a.png"
+                                  :contentType "image/png" :dataBase64 org-clipper-test--png))))
+       (with-temp-buffer
+         (insert-file-contents tmp)
+         (let ((s (buffer-string)))
+           (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))        ; embedded
+           (should (string-match-p "\\[\\[https://x/missing.png\\]\\]" s))))))))  ; unmapped stays remote
+
+;; Regression: the HTTP handler must thread :images from the JSON payload
+;; through to --insert-clip so links are actually rewritten.  A direct
+;; --insert-clip call masks a dropped :images key in --http-handle.
+(ert-deftest org-clipper-test-http-handle-embeds-images ()
+  (org-clipper-test--with-token
+   (org-clipper-test--with-target
+    (lambda (tmp)
+      (let* ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
+             (tok (org-clipper--http-token))
+             (json (json-serialize
+                    `(:template "w" :url "https://x/p" :title "img test"
+                      :body "[[https://x/a.png]] and [[https://x/missing.png]]"
+                      :images [(:url "https://x/a.png" :filename "a.png"
+                                :contentType "image/png" :dataBase64 ,org-clipper-test--png)])))
+             (body (encode-coding-string json 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "X-Org-Clipper-Token: " tok "\r\n"
+                              "Origin: chrome-extension://abc\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n"))
+             (res (org-clipper--http-handle headers body)))
+        (should (= 200 (car res)))
+        (with-temp-buffer
+          (insert-file-contents tmp)
+          (let ((s (buffer-string)))
+            (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))         ; embedded
+            (should (string-match-p "\\[\\[https://x/missing.png\\]\\]" s))     ; unmapped stays remote
+            (should-not (string-match-p "\\[\\[https://x/a.png\\]\\]" s)))))))))  ; rewritten away
+
+(ert-deftest org-clipper-test-http-max-body-raised ()
+  (should (>= org-clipper-http-max-body (* 128 1024 1024))))

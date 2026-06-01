@@ -242,6 +242,20 @@ of successfully-written images; failures are skipped."
           (error nil))))
     (nreverse map)))
 
+(defun org-clipper--rewrite-image-links (map)
+  "In the current subtree, rewrite [[URL]] and [[URL][desc]] to
+[[attachment:FILE]] for each (URL . FILE) in MAP."
+  (save-excursion
+    (save-restriction
+      (org-back-to-heading t)
+      (org-narrow-to-subtree)
+      (dolist (pair map)
+        (goto-char (point-min))
+        (while (re-search-forward
+                (concat "\\[\\[" (regexp-quote (car pair)) "\\(?:\\]\\[[^]]*\\)?\\]\\]")
+                nil t)
+          (replace-match (concat "[[attachment:" (cdr pair) "]]") t t))))))
+
 (defun org-clipper--insert-clip (clip)
   "Insert web-clip plist CLIP into the target file; return the file path.
 Plist keys: :template :url :title :body :tags :author :published
@@ -265,8 +279,14 @@ fresh :ID:."
          (insert entry)
          (goto-char pos)
          (org-back-to-heading t)
-         (org-id-get-create)))
-      (save-buffer))
+         (org-id-get-create)
+         (let ((images (plist-get clip :images)))
+           (when images
+             (let ((map (org-clipper--attach-images images)))
+               (when map
+                 (org-clipper--rewrite-image-links map)))))))
+      (save-buffer)
+      (ignore-errors (org-display-inline-images)))
     file))
 
 
@@ -345,7 +365,7 @@ heading.  Otherwise jump to the most recently appended (last) heading."
   "File holding the shared secret token for the HTTP transport (chmod 600)."
   :type 'file :group 'org-clipper)
 
-(defcustom org-clipper-http-max-body (* 20 1024 1024)
+(defcustom org-clipper-http-max-body (* 128 1024 1024)
   "Maximum accepted request-body size in bytes for the HTTP transport."
   :type 'integer :group 'org-clipper)
 
@@ -412,7 +432,8 @@ the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
                              :tags (plist-get p :tags) :author (plist-get p :author)
                              :published (plist-get p :published)
                              :description (plist-get p :description)
-                             :created (plist-get p :created))))
+                             :created (plist-get p :created)
+                             :images (plist-get p :images))))
             (unless (and (plist-get clip :url) (> (length (plist-get clip :url)) 0))
               (error "missing url"))
             (org-clipper--insert-clip clip)   ; saves -> ACK-after-save
