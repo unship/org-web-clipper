@@ -12,6 +12,7 @@
 
 import { mdToOrg }        from "./md-to-org.js";
 import { dispatchCapture } from "./transport.js";
+import { collectImageUrls, fetchImages } from "./fetch-images.js";
 
 const DEFAULTS = {
   defaultTags:     "",
@@ -66,6 +67,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     const payload = await buildCapturePayloadForTab(msg.tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly });
     const cfg = await getConfig();
+    if ((cfg.transport || "org-protocol") === "http") {
+      payload.images = await fetchImages(collectImageUrls(payload.body));
+    }
     const r = await dispatchCapture(payload, cfg);   // returns {ok, urlBytes?}
     return r;
   })()
@@ -81,6 +85,9 @@ chrome.commands?.onCommand.addListener(async (cmd) => {
   try {
     const payload = await buildCapturePayloadForTab(tab.id, {});
     const cfg = await getConfig();
+    if ((cfg.transport || "org-protocol") === "http") {
+      payload.images = await fetchImages(collectImageUrls(payload.body));
+    }
     await dispatchCapture(payload, cfg);
     await chrome.action.setBadgeBackgroundColor({ color: "#2E4A36" });
     await chrome.action.setBadgeText({ text: "OK", tabId: tab.id });
