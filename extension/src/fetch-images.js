@@ -2,12 +2,15 @@
 
 const IMG_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\?[^\]]*)?$/i;
 
-// Bare `[[url]]` image links from the converted Org body (md-to-org emits
-// images as bare links; `[[url][desc]]` is a normal link and is NOT collected).
+// Image links from the converted Org body, in BOTH the bare `[[url]]' and the
+// descriptive `[[url][desc]]' form (e.g. GitHub linked images, where md-to-org
+// emits a link rather than a bare image). Only image-like URLs (image
+// extension or data:image) are collected; non-image links are ignored. Emacs
+// rewrites either form to a bare `[[attachment:FILE]]' on embed.
 export function collectImageUrls(orgBody) {
   const out = [];
   const seen = new Set();
-  const re = /\[\[((?:https?:|data:)[^\]]+)\]\]/g;
+  const re = /\[\[((?:https?:|data:)[^\]]+?)\](?:\[[^\]]*\])?\]/g;
   let m;
   while ((m = re.exec(orgBody)) !== null) {
     const url = m[1];
@@ -98,9 +101,14 @@ if (isMain) {
       "[[https://x/doc][docs]] and [[https://x/b.JPG?v=2]] and [[https://x/page]]";
     const urls = collectImageUrls(body);
     check(JSON.stringify(urls) === JSON.stringify(["https://x/a.png", "https://x/b.JPG?v=2"]),
-          "collects image links, dedups, ignores [[url][desc]] and non-image urls");
+          "collects bare image links, dedups, ignores non-image urls");
     check(collectImageUrls("[[data:image/png;base64,AAA]]")[0] === "data:image/png;base64,AAA",
           "collects data:image urls");
+    check(
+      JSON.stringify(collectImageUrls(
+        "[[https://x/a.png][ R0 ]] and [[https://gh/raw/vss-architecture.png][diagram]] and [[https://x/page][text]]"))
+        === JSON.stringify(["https://x/a.png", "https://gh/raw/vss-architecture.png"]),
+      "collects image urls in [[url][desc]] form; still ignores non-image [[url][desc]]");
 
     const enc = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
     const mk = (status, ct, body) => ({
