@@ -101,6 +101,40 @@ manual `g'."
   "Render TAGS (a list) as Org's `:a:b:' suffix, or empty string."
   (if tags (concat ":" (mapconcat #'identity tags ":") ":") ""))
 
+(defun org-clipper--created-stamp (created)
+  "Inactive Org timestamp for CREATED (a date string), or today if empty."
+  (if (and created (string-match-p "[0-9]" created))
+      (format "[%s]" (string-trim created))
+    (format-time-string "[%Y-%m-%d %a]")))
+
+(defun org-clipper--format-entry (level title tags clip)
+  "Return the Org entry text for CLIP at heading LEVEL. No :ID: yet (added
+after insertion).  Empty optional properties are omitted.  TAGS is a list."
+  (let ((props '()))
+    (push (cons "SOURCE" (or (plist-get clip :url) "")) props)
+    (let ((author (plist-get clip :author)))
+      (when (and author (> (length (string-trim author)) 0))
+        (push (cons "AUTHOR" (string-trim author)) props)))
+    (let ((published (plist-get clip :published)))
+      (when (and published (> (length (string-trim published)) 0))
+        (push (cons "PUBLISHED" (string-trim published)) props)))
+    (push (cons "CREATED" (org-clipper--created-stamp (plist-get clip :created))) props)
+    (let ((description (plist-get clip :description)))
+      (when (and description (> (length (string-trim description)) 0))
+        (push (cons "DESCRIPTION"
+                    (replace-regexp-in-string "[\n\r]+" " " (string-trim description)))
+              props)))
+    (setq props (nreverse props))
+    (let ((body (or (plist-get clip :body) "")))
+      (concat
+       (make-string level ?*) " " (string-trim (or title "(untitled)"))
+       (let ((ts (org-clipper--tags-string tags)))
+         (if (> (length ts) 0) (concat "  " ts) ""))
+       "\n:PROPERTIES:\n"
+       (mapconcat (lambda (kv) (format ":%s: %s" (car kv) (cdr kv))) props "\n")
+       "\n:END:\n\n"
+       (if (string-suffix-p "\n" body) body (concat body "\n"))))))
+
 
 ;;; Visiting and refiling
 
