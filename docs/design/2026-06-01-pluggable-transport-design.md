@@ -1,6 +1,6 @@
 # org-clipper — Pluggable transport (org-protocol + HTTP) & capture-core redesign
 
-- **Status:** Draft for review
+- **Status:** Implemented (Phase 1 + Phase 2) — see git history & `docs/plans/`
 - **Date:** 2026-06-01
 - **Scope:** `extension/` and `emacs/org-clipper.el` (and the maintainer's Doom `+clipper` mirror)
 
