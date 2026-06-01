@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "org-clipper",
-  "version": "0.1.0",
-  "description": "Clip the current web page to an Emacs Org-mode file using Defuddle for article extraction.",
+  "version": "0.3.0",
+  "description": "Clip the current web page to Emacs Org-mode (Defuddle extraction). Pluggable transport: org-protocol (default) or a local HTTP endpoint.",
 
   "icons": {
     "16":  "icons/icon-16.png",
@@ -34,6 +34,10 @@
     "activeTab",
     "scripting",
     "storage"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1/*"
   ],
 
   "commands": {

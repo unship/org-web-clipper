@@ -5,6 +5,8 @@ const DEFAULTS = {
   defaultTags:     "",
   captureTemplate: "w",
   transport:       "org-protocol",
+  endpoint:        "127.0.0.1:17654",
+  token:           "",
 };
 
 const FIELDS = Object.keys(DEFAULTS);

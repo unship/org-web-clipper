@@ -130,14 +130,13 @@
     <main>
       <h1>org-clipper</h1>
       <p class="lead">
-        Configure how clipped pages are handed to Emacs via
-        <code>org-protocol://capture</code>.
+        Configure how clipped pages are handed to Emacs.
       </p>
 
       <div class="note">
-        The on-disk location of each clip is now determined by the
-        <code>org-capture</code> template in your Emacs config. See the
-        project README for a starter template; the key below must match.
+        Where each clip is filed is configured in Emacs
+        (<code>org-clipper-target-file</code> / <code>org-clipper-monthly-dir</code>,
+        under <code>org-clipper-target-headline</code>). See the project README.
       </div>
 
       <fieldset>
@@ -162,14 +161,29 @@
         <label>Transport
           <select id="transport">
             <option value="org-protocol">org-protocol (default)</option>
-            <option value="http">HTTP (Phase 2)</option>
+            <option value="http">HTTP (local endpoint)</option>
           </select>
         </label>
         <p class="hint">
           How clips reach Emacs. <code>org-protocol</code> (default) opens an
           <code>org-protocol://org-clipper?…</code> URL — zero extra process.
-          <code>HTTP</code> is Phase 2. Must match
-          <code>org-clipper-transport</code> in your Emacs config.
+          <code>HTTP</code> POSTs to a local Emacs endpoint (no URL-length limit;
+          best for very long pages). Must match <code>org-clipper-transport</code>
+          in your Emacs config.
+        </p>
+
+        <label for="endpoint">HTTP endpoint (host:port)</label>
+        <input id="endpoint" type="text" placeholder="127.0.0.1:17654" />
+        <p class="hint">
+          Used only when Transport = HTTP. Must match
+          <code>org-clipper-http-port</code> in Emacs.
+        </p>
+
+        <label for="token">HTTP token</label>
+        <input id="token" type="text" placeholder="(paste from ~/.config/org-clipper/token)" />
+        <p class="hint">
+          Used only when Transport = HTTP. Run
+          <code>M-x org-clipper-show-token</code> in Emacs and paste the value here.
         </p>
 
         <div class="actions">

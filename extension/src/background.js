@@ -17,6 +17,8 @@ const DEFAULTS = {
   defaultTags:     "",
   captureTemplate: "w",
   transport:       "org-protocol",
+  endpoint:        "127.0.0.1:17654",   // HTTP transport endpoint (host:port)
+  token:           "",                  // HTTP transport shared secret
 };
 
 async function getConfig() {

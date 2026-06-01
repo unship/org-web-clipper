@@ -1,23 +1,30 @@
 import { dispatchOrgProtocol } from "./transport-orgproto.js";
-// HTTP transport arrives in Phase 2.
+import { sendCapture as dispatchHttp } from "./transport-http.js";
+
 export async function dispatchCapture(payload, cfg = {}) {
   switch (cfg.transport || "org-protocol") {
     case "org-protocol": return dispatchOrgProtocol(payload);
-    case "http": throw new Error("HTTP transport not implemented yet (Phase 2)");
+    case "http":         return dispatchHttp(payload, cfg);
     default: throw new Error(`unknown transport: ${cfg.transport}`);
   }
 }
 
-const isMain = typeof process !== "undefined" && process.argv[1] &&
+// ---------------- self-tests (run: node src/transport.js) ----------------
+// NOTE: no top-level `await` — this module is imported by the MV3 background
+// service worker, and a top-level-await module fails SW registration
+// ("Status code: 3"). Keep awaits inside the async IIFE.
+const isMain =
+  typeof process !== "undefined" && process.argv[1] &&
   import.meta.url === new URL(`file://${process.argv[1]}`).href;
-// NOTE: the self-test must NOT use top-level `await` — this module is imported
-// by the MV3 background service worker, and a top-level-await module fails SW
-// registration ("Status code: 3"). Keep the awaits inside an async IIFE.
 if (isMain) {
   (async () => {
-    let ok = true; const check = (c, m) => { if (!c) { ok = false; console.error("FAIL:", m); } else console.log("PASS:", m); };
-    try { await dispatchCapture({ url: "u" }, { transport: "http" }); check(false, "http throws"); }
-    catch (e) { check(/Phase 2/.test(e.message), "http throws Phase-2 error"); }
+    let ok = true;
+    const check = (c, m) => { if (!c) { ok = false; console.error("FAIL:", m); } else console.log("PASS:", m); };
+    const saved = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+    check((await dispatchCapture({ url: "u" }, { transport: "http", token: "t" })).ok,
+          "http routes to the HTTP transport");
+    globalThis.fetch = saved;
     try { await dispatchCapture({ url: "u" }, { transport: "nope" }); check(false, "unknown throws"); }
     catch (e) { check(/unknown transport/.test(e.message), "unknown transport throws"); }
     process.exitCode = ok ? 0 : 1;
