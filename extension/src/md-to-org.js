@@ -104,7 +104,7 @@ export function mdToOrg(markdown) {
       i + 1 < lines.length &&
       RE_TABLE_SEP.test(lines[i + 1])
     ) {
-      out.push(line.trim());
+      out.push(transformTableRow(line));
       // Convert separator to org's `|---+---+---|` form
       const cells = lines[i + 1]
         .replace(/^\s*\|?/, "")
@@ -116,7 +116,7 @@ export function mdToOrg(markdown) {
       out.push(sep);
       i += 2;
       while (i < lines.length && RE_TABLE_ROW.test(lines[i])) {
-        out.push(lines[i].trim());
+        out.push(transformTableRow(lines[i]));
         i++;
       }
       continue;
@@ -209,6 +209,19 @@ function escapeSrcLine(s) {
   // Inside #+BEGIN_SRC/#+END_SRC blocks, leading `*` or `,` must be escaped
   // with a comma per Org's literal-example rules.
   return /^[*,]/.test(s) ? "," + s : s;
+}
+
+function transformTableRow(row) {
+  // Convert inline markup (links, emphasis, code) inside each table cell.
+  // Split on UNescaped pipes so a literal `\|` in a cell isn't treated as a
+  // column break; the separator row is handled separately by the caller.
+  const parts = row.trim().split(/(?<!\\)\|/);
+  return parts
+    .map((c, idx) =>
+      idx === 0 || idx === parts.length - 1
+        ? c
+        : " " + transformInline(c.trim()) + " ")
+    .join("|");
 }
 
 function transformInline(text) {
@@ -413,6 +426,12 @@ function runTests() {
     mdToOrg("```\nplain\n,nothing-special\n*star line\n```"),
     "#+BEGIN_SRC\nplain\n,,nothing-special\n,*star line\n#+END_SRC",
     "src-block leading * and , are comma-escaped",
+  );
+
+  assertEq(
+    mdToOrg("| Name | Ref |\n| --- | --- |\n| Docs | [site](https://example.com) |\n| Emph | **hi** `c` |"),
+    "| Name | Ref |\n|---+---|\n| Docs | [[https://example.com][site]] |\n| Emph | *hi* ~c~ |",
+    "inline markup inside table cells is converted (links, emphasis, code)",
   );
 
   console.log("\nall md-to-org tests done");
