@@ -108,3 +108,14 @@
            (should (string-match-p "^:SOURCE: https://x/测试$" s))
            (should (string-match-p "^:AUTHOR: David Rosa$" s))
            (should (string-match-p "你好" s))))))))
+
+(ert-deftest org-clipper-test-fill-body-removed ()
+  (should-not (fboundp 'org-clipper--fill-body-on-finalize))
+  (should-not (boundp 'org-clipper-fill-body)))
+
+(ert-deftest org-clipper-test-transport-defcustom-defaults-orgprotocol ()
+  (should (boundp 'org-clipper-transport))
+  (should (eq (default-value 'org-clipper-transport) 'org-protocol)))
+
+(ert-deftest org-clipper-test-no-org-capture-template-registration ()
+  (should-not (fboundp 'org-clipper-register-capture-template)))
