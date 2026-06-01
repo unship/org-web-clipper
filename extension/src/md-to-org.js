@@ -4,9 +4,9 @@
 // inline HTML). Block-based pass over lines, then an inline pass per block.
 //
 // Public API:
-//   mdToOrg(markdown: string, { headingShift?: number }): string
-//     headingShift adds to every heading level; useful when the caller will
-//     wrap the body under an outer Org headline.
+//   mdToOrg(markdown: string): string
+//     Heading levels are emitted verbatim (a `##' becomes `**'); Emacs owns
+//     level normalization (org-clipper--relevel-body) when filing the clip.
 
 const RE_CODE_FENCE   = /^(```|~~~)([^\n`~]*)$/;
 const RE_HR           = /^[ ]{0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
@@ -27,31 +27,7 @@ const RE_BLOCK_IMAGE = /^\s*!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"([^"]*)")?\s*\)\s*
 
 export function mdToOrg(markdown, options = {}) {
   const src = String(markdown || "").replace(/\r\n?/g, "\n");
-  // Resolve heading shift. `headingMin` (when provided) wins over the
-  // explicit `headingShift': it scans the input for its lowest heading
-  // level and shifts so that level lands exactly at `headingMin' in the
-  // output — which keeps body headings *contiguous* with the outer
-  // capture-template headline regardless of whether the source uses #,
-  // ## or ### as its top section level.
-  let shift = options.headingShift | 0;
-  // `floorLevel' is the minimum org-level any heading can take when
-  // `headingMin' is in effect.  This catches the case where a single
-  // outlier `# Title' in the source — the only level that pulled `shift'
-  // up — would otherwise still emerge at an org-level above the floor
-  // (e.g. `**' under a `**' capture container).  Clamping to the floor
-  // makes that one-shot heading a sibling of the first real section,
-  // which is the right hierarchy.
-  let floorLevel = 0;
-  if (typeof options.headingMin === "number" && options.headingMin > 0) {
-    const min = findMinHeadingLevel(src);
-    if (min !== null) shift = options.headingMin - min;
-    floorLevel = options.headingMin;
-  }
-  const emitHeading = (rawLevel) => {
-    let lvl = Math.max(1, Math.min(8, rawLevel + shift));
-    if (floorLevel > 0) lvl = Math.max(lvl, floorLevel);
-    return "*".repeat(lvl);
-  };
+  const emitHeading = (rawLevel) => "*".repeat(Math.max(1, Math.min(8, rawLevel)));
   const lines = src.split("\n");
   const out   = [];
   let i = 0;
@@ -117,7 +93,7 @@ export function mdToOrg(markdown, options = {}) {
         i++;
       }
       out.push("#+BEGIN_QUOTE");
-      out.push(mdToOrg(body.join("\n"), { headingShift: shift }).replace(/\n+$/, ""));
+      out.push(mdToOrg(body.join("\n")).replace(/\n+$/, ""));
       out.push("#+END_QUOTE");
       continue;
     }
@@ -233,42 +209,6 @@ function escapeSrcLine(s) {
   // Inside #+BEGIN_SRC/#+END_SRC blocks, leading `*` or `,` must be escaped
   // with a comma per Org's literal-example rules.
   return /^[*,]/.test(s) ? "," + s : s;
-}
-
-// Find the smallest (i.e. lowest-depth) ATX heading level that meaningfully
-// represents the document's section structure.  Returns null when the input
-// has no headings at all.
-//
-// We *prefer* the lowest level that occurs at least twice: web extractors
-// (Defuddle in particular) sometimes leave a single `# Article Title' at
-// the top of the body even though that title is also held separately in
-// the page metadata.  Counting it as the minimum would force every real
-// section one extra level deeper, producing the `**' → `****' gap users
-// notice in their org tree.  When no level repeats — i.e. a short article
-// with a single section heading and maybe one sub-heading — we fall back
-// to the absolute minimum, because in that case the structure is shallow
-// enough that the natural answer is right.
-function findMinHeadingLevel(src) {
-  const counts = new Map();
-  for (const line of src.split("\n")) {
-    const m = line.match(/^(#{1,6})\s/);
-    if (m) {
-      const n = m[1].length;
-      counts.set(n, (counts.get(n) || 0) + 1);
-    }
-  }
-  if (counts.size === 0) return null;
-  let min = Infinity;
-  for (const [lvl, n] of counts) {
-    if (n >= 2 && lvl < min) min = lvl;
-  }
-  if (!Number.isFinite(min)) {
-    // No repeating level — fall back to absolute min.
-    for (const lvl of counts.keys()) {
-      if (lvl < min) min = lvl;
-    }
-  }
-  return min;
 }
 
 function transformInline(text) {
@@ -458,9 +398,9 @@ function runTests() {
   );
 
   assertEq(
-    mdToOrg("# H1", { headingShift: 1 }),
-    "** H1",
-    "headingShift pushes level down",
+    mdToOrg("## A\n\n#### Deep"),
+    "** A\n\n**** Deep",
+    "heading levels emitted verbatim (Emacs normalizes)",
   );
 
   assertEq(
@@ -473,82 +413,6 @@ function runTests() {
     mdToOrg("```\nplain\n,nothing-special\n*star line\n```"),
     "#+BEGIN_SRC\nplain\n,,nothing-special\n,*star line\n#+END_SRC",
     "src-block leading * and , are comma-escaped",
-  );
-
-  // headingMin: auto-shift so lowest heading lands at requested org level.
-  assertEq(
-    mdToOrg("## Sub\n\nbody\n\n### Subsub\n\nmore", { headingMin: 3 }),
-    "*** Sub\n\nbody\n\n**** Subsub\n\nmore",
-    "headingMin lifts min level ## to *** (continuous under ** outer)",
-  );
-  assertEq(
-    mdToOrg("### Only\n\nbody\n\n#### Deeper", { headingMin: 3 }),
-    "*** Only\n\nbody\n\n**** Deeper",
-    "headingMin with source-min ### keeps ### at *** (shift 0)",
-  );
-  assertEq(
-    mdToOrg("# Top\n\nbody\n\n## Sub", { headingMin: 3 }),
-    "*** Top\n\nbody\n\n**** Sub",
-    "headingMin with source-min # promotes to *** (shift +2)",
-  );
-  assertEq(
-    mdToOrg("body without headings", { headingMin: 3 }),
-    "body without headings",
-    "headingMin is a no-op when source has no headings",
-  );
-
-  // --- count-based min: ignore one-shot leading `# Title' ----------------
-  //
-  // This is the bug pattern users hit on web clips: Defuddle leaves a single
-  // `# Article Title' at the top of the body. Treating it as the minimum
-  // forced every real section one extra level deeper than expected.
-  // New behaviour: prefer the lowest level that occurs ≥2 times; the
-  // one-shot `#' is then clamped up to `headingMin' instead of dragging
-  // the shift up for everyone else.
-
-  assertEq(
-    mdToOrg(
-      "# Article Title\n\n## Section 1\n\nbody1\n\n## Section 2\n\nbody2",
-      { headingMin: 3 },
-    ),
-    // `##' repeats (count 2) → min=2 → shift=1.
-    // `#' → 1+1=2 → CLAMPED to 3 → ***
-    // `##' → 2+1=3 → ***
-    "*** Article Title\n\n*** Section 1\n\nbody1\n\n*** Section 2\n\nbody2",
-    "leading one-shot `#' is ignored for min, clamped to floor",
-  );
-
-  assertEq(
-    mdToOrg(
-      "# T\n\n## A\n\nbody\n\n## B\n\nbody\n\n### B.1\n\nbody",
-      { headingMin: 3 },
-    ),
-    // `##' repeats (count 2) → min=2 → shift=1.
-    // `#' → 2 → CLAMP 3 → ***
-    // `##' → 3 → ***
-    // `###' → 4 → **** (subsection of `##')
-    "*** T\n\n*** A\n\nbody\n\n*** B\n\nbody\n\n**** B.1\n\nbody",
-    "leading title + repeated sections + subsections (the Go-to-Rust shape)",
-  );
-
-  assertEq(
-    mdToOrg(
-      "# A\n\n## a1\n\n# B\n\n## b1",
-      { headingMin: 3 },
-    ),
-    // Both `#' (count 2) and `##' (count 2) repeat → min=1.
-    // `#' → 1+2=3 → ***
-    // `##' → 2+2=4 → ****
-    "*** A\n\n**** a1\n\n*** B\n\n**** b1",
-    "when top-level `#' actually repeats, it stays in the min calc",
-  );
-
-  assertEq(
-    mdToOrg("# Solo Title", { headingMin: 3 }),
-    // Only one heading, never repeats → fall back to absolute min=1.
-    // shift = 3 - 1 = 2 → 1+2 = 3 → *** (no clamp needed).
-    "*** Solo Title",
-    "single solo `#' falls back to absolute min (no spurious clamp)",
   );
 
   console.log("\nall md-to-org tests done");

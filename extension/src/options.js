@@ -4,7 +4,6 @@
 const DEFAULTS = {
   defaultTags:     "",
   captureTemplate: "w",
-  headingMin:      3,
   transport:       "org-protocol",
 };
 
@@ -26,9 +25,6 @@ function readForm() {
   }
   v.captureTemplate = (v.captureTemplate || "").trim() || DEFAULTS.captureTemplate;
   v.transport       = (v.transport       || "").trim() || DEFAULTS.transport;
-  v.headingMin = Number.isFinite(v.headingMin)
-    ? Math.max(1, Math.min(8, v.headingMin))
-    : DEFAULTS.headingMin;
   return v;
 }
 

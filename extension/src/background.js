@@ -16,10 +16,6 @@ import { dispatchCapture } from "./transport.js";
 const DEFAULTS = {
   defaultTags:     "",
   captureTemplate: "w",
-  // Lowest org-level the body's headings should occupy. Default 3 keeps
-  // them contiguous under a capture-template headline filed at level 2
-  // (`* Web clips' -> `** Page Title' -> body starts at ***).
-  headingMin:      3,
   transport:       "org-protocol",
 };
 
@@ -39,11 +35,11 @@ async function extractFromTab(tabId) {
   return last.result;
 }
 
-function bodyFromExtract(extract, { selectionOnly, headingMin }) {
+function bodyFromExtract(extract, { selectionOnly } = {}) {
   if (selectionOnly && extract.selection && extract.selection.trim()) {
     return `#+BEGIN_QUOTE\n${extract.selection.trim()}\n#+END_QUOTE\n`;
   }
-  return mdToOrg(extract.markdown || "", { headingMin });
+  return mdToOrg(extract.markdown || "");
 }
 
 // Build the capture payload for a tab. Does NOT dispatch — the transport
@@ -55,9 +51,7 @@ async function buildCapturePayloadForTab(tabId, { tags = [], selectionOnly = fal
     ...cfg.defaultTags.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
     ...tags,
   ]));
-  const body = bodyFromExtract(extract, {
-    selectionOnly, headingMin: Number(cfg.headingMin) || DEFAULTS.headingMin,
-  });
+  const body = bodyFromExtract(extract, { selectionOnly });
   return {
     template: cfg.captureTemplate, url: extract.url, title: extract.title,
     body, tags: mergedTags, author: extract.author, published: extract.published,
