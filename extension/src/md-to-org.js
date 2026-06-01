@@ -25,7 +25,7 @@ const RE_FOOTNOTE_DEF = /^\[\^([^\]]+)\]:\s*(.*)$/;
 // natively recognises and that HTML/LaTeX exports honour.
 const RE_BLOCK_IMAGE = /^\s*!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"([^"]*)")?\s*\)\s*$/;
 
-export function mdToOrg(markdown, options = {}) {
+export function mdToOrg(markdown) {
   const src = String(markdown || "").replace(/\r\n?/g, "\n");
   const emitHeading = (rawLevel) => "*".repeat(Math.max(1, Math.min(8, rawLevel)));
   const lines = src.split("\n");
@@ -392,7 +392,7 @@ function runTests() {
   );
 
   assertEq(
-    mdToOrg("Heading shifted", { headingShift: 0 }),
+    mdToOrg("Heading shifted"),
     "Heading shifted",
     "paragraph passthrough",
   );
