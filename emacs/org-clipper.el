@@ -287,5 +287,159 @@ heading.  Otherwise jump to the most recently appended (last) heading."
   (org-refile))
 
 
+;;; HTTP transport (opt-in: `org-clipper-transport' = `http')
+;;
+;; A tiny asynchronous 127.0.0.1 HTTP/1.1 endpoint.  The extension POSTs a
+;; JSON payload (no URL-length limit -> super-long documents survive); the
+;; daemon NEVER blocks (a `make-network-process' :filter handles bytes as they
+;; arrive).  Security: bind 127.0.0.1, a shared token in `X-Org-Clipper-Token'
+;; (a custom header forces a CORS preflight websites cannot satisfy; a local
+;; process would still need the secret), an Origin allow-check, a body-size
+;; cap, and the payload is treated strictly as data.  Response is sent only
+;; AFTER the clip is saved (accurate success/failure; no silent loss).
+
+(defcustom org-clipper-http-port 17654
+  "TCP port for the local HTTP capture endpoint (bound to 127.0.0.1)."
+  :type 'integer :group 'org-clipper)
+
+(defcustom org-clipper-http-token-file
+  (expand-file-name "org-clipper/token" (or (getenv "XDG_CONFIG_HOME") "~/.config"))
+  "File holding the shared secret token for the HTTP transport (chmod 600)."
+  :type 'file :group 'org-clipper)
+
+(defcustom org-clipper-http-max-body (* 20 1024 1024)
+  "Maximum accepted request-body size in bytes for the HTTP transport."
+  :type 'integer :group 'org-clipper)
+
+(defvar org-clipper--http-server nil
+  "The HTTP server process, or nil when stopped.")
+
+(defun org-clipper--gen-token ()
+  "Generate a fresh random token string."
+  (substring (secure-hash 'sha256 (format "%s-%s-%s" (float-time) (emacs-pid) (random)))
+             0 40))
+
+(defun org-clipper--http-token ()
+  "Return the shared token, generating + persisting one (chmod 600) if absent."
+  (let ((f (expand-file-name org-clipper-http-token-file)))
+    (unless (and (file-exists-p f) (> (file-attribute-size (file-attributes f)) 0))
+      (make-directory (file-name-directory f) t)
+      (with-temp-file f (insert (org-clipper--gen-token)))
+      (set-file-modes f #o600))
+    (string-trim (with-temp-buffer (insert-file-contents f) (buffer-string)))))
+
+(defun org-clipper--http-parse (buf)
+  "Parse accumulated request BUF (a unibyte string).
+Return (:incomplete) until the whole request is present, then
+\(:complete HEADERS BODY-BYTES) with BODY-BYTES exactly Content-Length
+bytes, or (:toobig N) when Content-Length exceeds `org-clipper-http-max-body'."
+  (let ((sep (string-match "\r\n\r\n" buf)))
+    (if (not sep)
+        '(:incomplete)
+      (let* ((headers (substring buf 0 sep))
+             (body-start (+ sep 4))
+             (case-fold-search t)
+             (clen (and (string-match "^content-length:[ \t]*\\([0-9]+\\)" headers)
+                        (string-to-number (match-string 1 headers)))))
+        (cond
+         ((null clen) (list :complete headers ""))
+         ((> clen org-clipper-http-max-body) (list :toobig clen))
+         ((>= (- (length buf) body-start) clen)
+          (list :complete headers (substring buf body-start (+ body-start clen))))
+         (t '(:incomplete)))))))
+
+(defun org-clipper--http-handle (headers body-bytes)
+  "Validate request (HEADERS string + BODY-BYTES unibyte) and, if OK, insert
+the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
+  (let ((case-fold-search t))
+    (cond
+     ((not (string-match "\\`POST[ \t]+/capture\\(?:[ \t?]\\|\\'\\)" headers))
+      (cons 404 "not found"))
+     ((let ((tok (and (string-match "^x-org-clipper-token:[ \t]*\\([^\r\n]*\\)" headers)
+                      (string-trim (match-string 1 headers)))))
+        (not (and tok (> (length tok) 0) (string= tok (org-clipper--http-token)))))
+      (cons 403 "bad token"))
+     ((let ((origin (and (string-match "^origin:[ \t]*\\([^\r\n]*\\)" headers)
+                         (string-trim (match-string 1 headers)))))
+        (and origin (> (length origin) 0)
+             (not (string-prefix-p "chrome-extension://" origin))))
+      (cons 403 "bad origin"))
+     (t
+      (condition-case e
+          (let* ((json (decode-coding-string body-bytes 'utf-8))
+                 (p (json-parse-string json :object-type 'plist :array-type 'list
+                                       :null-object nil))
+                 (clip (list :template (plist-get p :template) :url (plist-get p :url)
+                             :title (plist-get p :title) :body (or (plist-get p :body) "")
+                             :tags (plist-get p :tags) :author (plist-get p :author)
+                             :published (plist-get p :published)
+                             :description (plist-get p :description)
+                             :created (plist-get p :created))))
+            (unless (and (plist-get clip :url) (> (length (plist-get clip :url)) 0))
+              (error "missing url"))
+            (org-clipper--insert-clip clip)   ; saves -> ACK-after-save
+            (cons 200 "ok"))
+        (error (cons 500 (error-message-string e))))))))
+
+(defun org-clipper--http-respond (proc code message)
+  "Write an HTTP response to PROC and close it."
+  (let* ((okp (= code 200))
+         (reason (pcase code (200 "OK") (403 "Forbidden") (404 "Not Found")
+                        (413 "Payload Too Large") (_ "Internal Server Error")))
+         (msg (replace-regexp-in-string "[\"\\\n\r\t]" " " (format "%s" message)))
+         (json (if okp "{\"ok\":true}" (format "{\"ok\":false,\"error\":\"%s\"}" msg)))
+         (body (encode-coding-string json 'utf-8))
+         (head (format (concat "HTTP/1.1 %d %s\r\nContent-Type: application/json; charset=utf-8\r\n"
+                               "Connection: close\r\nContent-Length: %d\r\n\r\n")
+                       code reason (length body))))
+    (ignore-errors
+      (process-send-string proc (concat (encode-coding-string head 'utf-8) body)))
+    (process-put proc 'oc-buf nil)
+    (ignore-errors (delete-process proc))))
+
+(defun org-clipper--http-filter (proc chunk)
+  "Accumulate request bytes on PROC; dispatch once a full request arrives."
+  (process-put proc 'oc-buf (concat (process-get proc 'oc-buf) chunk))
+  (pcase (org-clipper--http-parse (process-get proc 'oc-buf))
+    (`(:toobig . ,_) (org-clipper--http-respond proc 413 "payload too large"))
+    (`(:complete ,headers ,body)
+     (let ((res (org-clipper--http-handle headers body)))
+       (org-clipper--http-respond proc (car res) (cdr res))))
+    (_ nil)))
+
+;;;###autoload
+(defun org-clipper-start ()
+  "Start the local HTTP capture endpoint on 127.0.0.1:`org-clipper-http-port'."
+  (interactive)
+  (org-clipper-stop)
+  (org-clipper--http-token)             ; ensure the token file exists
+  (setq org-clipper--http-server
+        (make-network-process
+         :name "org-clipper-http" :server t :host "127.0.0.1"
+         :service org-clipper-http-port :family 'ipv4
+         :coding 'binary :noquery t :filter #'org-clipper--http-filter))
+  (when (called-interactively-p 'any)
+    (message "org-clipper: HTTP endpoint live on 127.0.0.1:%d" org-clipper-http-port))
+  org-clipper--http-server)
+
+;;;###autoload
+(defun org-clipper-stop ()
+  "Stop the local HTTP capture endpoint."
+  (interactive)
+  (when (process-live-p org-clipper--http-server)
+    (delete-process org-clipper--http-server))
+  (setq org-clipper--http-server nil))
+
+;;;###autoload
+(defun org-clipper-show-token ()
+  "Print (and copy) the HTTP shared token, for pasting into the extension."
+  (interactive)
+  (let ((tok (org-clipper--http-token)))
+    (when (called-interactively-p 'any)
+      (kill-new tok)
+      (message "org-clipper token (copied to kill-ring): %s" tok))
+    tok))
+
+
 (provide 'org-clipper)
 ;;; org-clipper.el ends here

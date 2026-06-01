@@ -144,3 +144,80 @@
          (should (string-match-p "^\\*\\*\\* Sec$" s))       ; body starts at level 3
          (should (string-match-p "^\\*\\*\\*\\* Deep$" s))   ; gap 2->4 compressed to 3->4
          (should-not (string-match-p "^\\*\\*\\*\\*\\* " s))))))) ; no level-5
+
+
+;;; --- Phase 2: HTTP transport ---
+
+(defmacro org-clipper-test--with-token (&rest body)
+  "Run BODY with a throwaway HTTP token file."
+  `(let ((org-clipper-http-token-file
+          (make-temp-name (expand-file-name "oc-token-" temporary-file-directory))))
+     (unwind-protect (progn ,@body)
+       (ignore-errors (delete-file org-clipper-http-token-file)))))
+
+(ert-deftest org-clipper-test-http-parse-incomplete-then-complete ()
+  (should (eq :incomplete (car (org-clipper--http-parse
+                                "POST /capture HTTP/1.1\r\nContent-Length: 5\r\n"))))
+  (let ((r (org-clipper--http-parse
+            "POST /capture HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")))
+    (should (eq :complete (car r)))
+    (should (equal (nth 2 r) "hello"))))
+
+(ert-deftest org-clipper-test-http-parse-byte-accurate-cjk ()
+  ;; Content-Length is BYTES; a CJK body must be sliced by bytes, not chars.
+  (let* ((body (encode-coding-string "你好世界" 'utf-8))     ; 12 bytes, 4 chars
+         (req (concat "POST /capture HTTP/1.1\r\nContent-Length: "
+                      (number-to-string (length body)) "\r\n\r\n" body))
+         (r (org-clipper--http-parse req)))
+    (should (eq :complete (car r)))
+    (should (equal (decode-coding-string (nth 2 r) 'utf-8) "你好世界"))))
+
+(ert-deftest org-clipper-test-http-parse-toobig ()
+  (let ((org-clipper-http-max-body 10))
+    (should (eq :toobig (car (org-clipper--http-parse
+                              "POST /capture HTTP/1.1\r\nContent-Length: 999\r\n\r\n"))))))
+
+(ert-deftest org-clipper-test-http-handle-valid-inserts-with-gapless-levels ()
+  (org-clipper-test--with-token
+   (org-clipper-test--with-target
+    (lambda (tmp)
+      (let* ((tok (org-clipper--http-token))
+             (json (json-serialize '(:template "w" :url "https://x/测试" :title "标题 ☕"
+                                     :tags ["clippings" "rust"] :author "Rosa"
+                                     :body "** 引言\n\n正文 café 😀\n\n**** 深入")))
+             (body (encode-coding-string json 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "X-Org-Clipper-Token: " tok "\r\n"
+                              "Origin: chrome-extension://abc\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n"))
+             (res (org-clipper--http-handle headers body)))
+        (should (= 200 (car res)))
+        (with-temp-buffer
+          (insert-file-contents tmp)
+          (let ((s (buffer-string)))
+            (should (string-match-p "^\\*\\* 标题 ☕  :clippings:rust:$" s))
+            (should (string-match-p "^:AUTHOR: Rosa$" s))
+            (should (string-match-p "^:SOURCE: https://x/测试$" s))
+            (should (string-match-p "^\\*\\*\\* 引言$" s))       ; base = clip-level+1 = 3
+            (should (string-match-p "^\\*\\*\\*\\* 深入$" s))     ; gap 2->4 compressed
+            (should-not (string-match-p "^\\*\\*\\*\\*\\* " s)))))))))
+
+(ert-deftest org-clipper-test-http-handle-bad-token-no-insert ()
+  (org-clipper-test--with-token
+   (org-clipper-test--with-target
+    (lambda (tmp)
+      (org-clipper--http-token)         ; generate the real token (differs from WRONG)
+      (let* ((body (encode-coding-string "{\"url\":\"x\"}" 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nX-Org-Clipper-Token: WRONG\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n")))
+        (should (= 403 (car (org-clipper--http-handle headers body))))
+        (should (equal "" (with-temp-buffer (insert-file-contents tmp) (buffer-string)))))))))
+
+(ert-deftest org-clipper-test-http-handle-website-origin-rejected ()
+  (org-clipper-test--with-token
+   (let* ((tok (org-clipper--http-token))
+          (body (encode-coding-string "{\"url\":\"x\"}" 'utf-8))
+          (headers (concat "POST /capture HTTP/1.1\r\nX-Org-Clipper-Token: " tok "\r\n"
+                           "Origin: https://evil.example\r\n"
+                           "Content-Length: " (number-to-string (length body)) "\r\n")))
+     (should (= 403 (car (org-clipper--http-handle headers body)))))))
