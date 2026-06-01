@@ -170,10 +170,14 @@ so captures never re-run heavy org-mode setup or attach LSP/grammar tools."
     path))
 
 (defun org-clipper--capture-target-file ()
-  "Ensure the target file is visited in a lean, kept-alive buffer; return path."
+  "Ensure the target file is visited in a lean, kept-alive buffer; return path.
+The lean open binds `org-mode-hook' AND `find-file-hook' to nil so heavy
+per-buffer setup (LSP/grammar tools, project/VCS scans, etc.) never runs on --
+or blocks the daemon at -- capture time.  Saving still runs normally, so e.g.
+org-roam/vulpea autosync is unaffected."
   (let ((file (org-clipper--current-target-file)))
     (when (and org-clipper-lean-capture (not (find-buffer-visiting file)))
-      (let ((org-mode-hook nil) (org-inhibit-startup t))
+      (let ((org-mode-hook nil) (find-file-hook nil) (org-inhibit-startup t))
         (find-file-noselect file)))
     file))
 
