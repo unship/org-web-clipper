@@ -67,7 +67,7 @@ Both transports carry the same logical payload:
   created:     "2026-03-28" }          // capture date (browser-side capturedAt)
 ```
 
-`md-to-org` conversion and heading-level shaping stay **in the browser** (keeps that CPU off the daemon). `template` selects an org-clipper profile (default `w`); it is **not** an `org-capture-templates` key anymore (see §7). The metadata fields (`author`/`published`/`description`/`created`) come from Defuddle (`content-extract.js`) and are mapped to the entry's PROPERTIES drawer — the org equivalent of Obsidian Clipper's YAML frontmatter (see §7). They are short, so they do not affect transport limits; only `body` does.
+`md-to-org` conversion and heading-level shaping stay **in the browser** (keeps that CPU off the daemon). `template` selects an org-clipper profile (default `w`); it is **not** an `org-capture-templates` key anymore (see §7). The metadata fields (`author`/`published`/`description`/`created`) come from Defuddle (`content-extract.js`) and are mapped to the entry's PROPERTIES drawer — the org equivalent of Obsidian Clipper's YAML frontmatter (see §7). They are short, so they do not affect transport limits; only `body` does. The `body`'s Org headings are at **natural source levels** (no browser-side level guessing); Emacs re-levels them gaplessly on insert (see §7).
 
 ## 5. Transport: org-protocol (default)
 
@@ -122,6 +122,8 @@ Content-Length: <n>
    <body>
    ```
    `:ID:` (via `org-id`) and `:CREATED:` are always emitted; `:AUTHOR:`/`:PUBLISHED:`/`:DESCRIPTION:` only when non-empty. The link property is **`:SOURCE:`** (aligned with Obsidian Clipper, not the old `:URL:`). **`:AUTHOR:` is stored as plain text** (e.g. `David Álvarez Rosa`): property values are best kept as simple queryable scalars (greppable, sortable, usable in `org-ql`/column view/`org-roam` property queries), and this avoids capture-time org-roam node lookups (perf) and Obsidian-style `[[author]]` links. A separate on-demand command could later convert `:AUTHOR:` text into a roam link. Tags on the headline always include `org-clipper-default-tags` (default `("clippings")`) merged with the user's tags.
+
+   **Heading normalization (gapless) — Emacs is the single source of truth.** Before the body is embedded, its Org headings are re-leveled so the shallowest becomes **`clip-level + 1`** and nesting is **gapless**: each deeper source level maps to exactly *parent + 1*, regardless of skips in the source HTML (a `<h2>` → `<h4>` jump becomes `***` → `****`, not `***` → `*****`). This fixes the old "`**` title, `****` sub-heading" gap, whose root cause was that `md-to-org` only *shifted* levels (preserving source gaps) and *guessed* the target level in the browser. Consequently `md-to-org` is simplified to emit headings at their **natural source levels** (no `headingMin`/shift/floor); the browser no longer guesses the target level. The re-level pass scans only heading lines (no full `org-element` parse), so it is cheap even for super-long bodies.
 4. `save-buffer`. For HTTP, the 200 response is sent **after** the save succeeds (**ACK-after-save**: accurate success/failure, zero silent loss). org-protocol has no response channel; failures are surfaced via `message`/notification.
 5. **No `org-capture`** machinery (no capture buffer, no `org-capture-mode-hook`, no `:before-finalize`) — but the core itself generates the `:ID:` (`org-id`) and writes the full metadata drawer, so **nothing the old capture hooks provided is lost** (`:ID:`, `:CREATED:`, author, etc. are all preserved). Minimal main-thread time.
 
@@ -225,11 +227,11 @@ Mitigations:
 - `popup.js`: drop the hidden-iframe dispatch; background performs the send; popup only renders status.
 - `capture-url.js`: folded into `transport-orgproto.js`.
 - `options.{html,js}`: add `transport`, `endpoint`, `token`; drop the now-obsolete `subprotocol` (org-protocol transport uses a fixed `org-clipper` sub-protocol).
-- `md-to-org.js`: unchanged.
+- `md-to-org.js`: **simplified** — emit headings at natural source levels (drop `headingMin`/`findMinHeadingLevel`/shift/floor); Emacs now owns level normalization. `background.js`/`options.*` drop the `headingMin` setting.
 
 **Emacs (`emacs/org-clipper.el`)**
 - New: `org-clipper-transport`, `org-clipper-http-port`, `org-clipper-http-token` (+ token file), `org-clipper-default-tags` (default `("clippings")`).
-- New: `org-clipper--insert-clip` (shared core; takes the full payload incl. metadata, generates `:ID:`, writes the metadata drawer), `org-clipper--capture-target-file` (lean persistent buffer — already prototyped), profile registry (default `w`).
+- New: `org-clipper--insert-clip` (shared core; full payload incl. metadata, generates `:ID:`, writes the metadata drawer), `org-clipper--relevel-body` (gapless heading normalization, base = clip-level + 1), `org-clipper--capture-target-file` (lean persistent buffer — already prototyped), profile registry (default `w`).
 - New (http): `org-clipper--http-server`, `org-clipper--http-filter`, `org-clipper-start`, `org-clipper-stop`, `org-clipper-show-token`.
 - New (org-protocol): `org-clipper` sub-protocol handler → decode → core.
 - **Removed:** `org-clipper-fill-body`, `org-clipper--fill-body-on-finalize`, `:before-finalize`; the old built-in-`capture`/template-`w` registration.

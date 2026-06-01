@@ -750,8 +750,145 @@ git commit -m "docs: README for pluggable transport + metadata drawer (Phase 1)"
 
 ---
 
+## Task 11: Gapless heading normalization (Emacs)
+
+**Files:**
+- Modify: `emacs/org-clipper.el` (add `org-clipper--relevel-body`; update `org-clipper--format-entry` to call it)
+- Test: `emacs/test/org-clipper-test.el`
+
+- [ ] **Step 1: Write the failing test**
+
+Append:
+```elisp
+(ert-deftest org-clipper-test-relevel-compresses-gaps ()
+  ;; source jumps ** -> **** (h2 -> h4); base 3 => *** -> **** (gapless, no *****)
+  (should (equal (org-clipper--relevel-body "** A\n\ntext\n\n**** deep\n\n** B" 3)
+                 "*** A\n\ntext\n\n**** deep\n\n*** B")))
+
+(ert-deftest org-clipper-test-relevel-base-follows-level ()
+  (should (equal (org-clipper--relevel-body "** A\n\n*** B" 4)
+                 "**** A\n\n***** B")))
+
+(ert-deftest org-clipper-test-relevel-ignores-src-blocks ()
+  (should (equal (org-clipper--relevel-body "** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC" 3)
+                 "*** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC")))
+
+(ert-deftest org-clipper-test-insert-clip-headings-contiguous ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (org-clipper--insert-clip (list :title "T" :url "u" :body "** Sec\n\nx\n\n**** Deep"))
+     (with-temp-buffer
+       (insert-file-contents tmp)
+       (let ((s (buffer-string)))
+         (should (string-match-p "^\\*\\* T " s))           ; clip title at level 2
+         (should (string-match-p "^\\*\\*\\* Sec$" s))       ; body starts at level 3
+         (should (string-match-p "^\\*\\*\\*\\* Deep$" s))   ; gap 2->4 compressed to 3->4
+         (should-not (string-match-p "^\\*\\*\\*\\*\\* " s))))))) ; no level-5
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `emacs -Q --batch -L emacs -l emacs/test/org-clipper-test.el -f ert-run-tests-batch-and-exit`
+Expected: FAIL — `org-clipper--relevel-body` void; contiguity test fails (body still raw-level).
+
+- [ ] **Step 3: Add `org-clipper--relevel-body` and wire it into `org-clipper--format-entry`**
+
+Add:
+```elisp
+(defun org-clipper--relevel-body (body base)
+  "Re-level Org headings in BODY so the shallowest becomes BASE and nesting is
+gapless: each deeper source level maps to parent-output + 1, regardless of
+skips.  Lines inside #+BEGIN_.../#+END_... blocks and non-heading lines are
+left untouched."
+  (let ((stack '()) (in-block nil) out)
+    (dolist (ln (split-string body "\n"))
+      (cond
+       ((string-match "\\`[ \t]*#\\+BEGIN_" ln) (setq in-block t) (push ln out))
+       ((string-match "\\`[ \t]*#\\+END_" ln)   (setq in-block nil) (push ln out))
+       ((and (not in-block) (string-match "\\`\\(\\*+\\)[ \t]+\\(.*\\)\\'" ln))
+        (let ((src (length (match-string 1 ln))) (text (match-string 2 ln)) lvl)
+          (while (and stack (> (caar stack) src)) (pop stack))
+          (let ((top (car stack)))
+            (cond ((null top)        (setq lvl base) (push (cons src base) stack))
+                  ((= (car top) src) (setq lvl (cdr top)))
+                  (t                 (setq lvl (1+ (cdr top))) (push (cons src lvl) stack))))
+          (push (concat (make-string lvl ?*) " " text) out)))
+       (t (push ln out))))
+    (mapconcat #'identity (nreverse out) "\n")))
+```
+Then change the body binding in `org-clipper--format-entry` from
+```elisp
+    (let ((body (or (plist-get clip :body) "")))
+```
+to
+```elisp
+    (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") (1+ level))))
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `emacs -Q --batch -L emacs -l emacs/test/org-clipper-test.el -f ert-run-tests-batch-and-exit`
+Expected: PASS (all). Note: Task 2's `format-entry-full` still passes (its `** body` is releveled to `*** body`, which still satisfies the `string-suffix-p "** body\ntext\n"` check); if you find that brittle, change that test's `:body` to plain text with no heading.
+
+- [ ] **Step 5: Commit**
+```bash
+git add emacs/org-clipper.el emacs/test/org-clipper-test.el
+git commit -m "feat(emacs): gapless heading re-leveling (base = clip-level+1)"
+```
+
+---
+
+## Task 12: Emit natural heading levels in md-to-org; drop headingMin (Extension)
+
+**Files:**
+- Modify: `extension/src/md-to-org.js`, `extension/src/background.js`, `extension/src/options.html`, `extension/src/options.js`
+
+> Supersedes the `headingMin` usage introduced in Task 8 (`bodyFromExtract`): Emacs now owns level normalization (Task 11), so the browser emits verbatim levels.
+
+- [ ] **Step 1: Update md-to-org self-tests**
+
+In `md-to-org.js` `runTests()`: delete the assertions that use `{ headingShift: … }` or `{ headingMin: … }` (the cases labeled "headingShift pushes level down" and all "headingMin …" cases). Keep `mdToOrg("# Title\n\n## Sub\n\nbody")` → `* Title\n\n** Sub\n\nbody`. Add:
+```js
+assertEq(mdToOrg("## A\n\n#### Deep"), "** A\n\n**** Deep",
+  "heading levels emitted verbatim (Emacs normalizes)");
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd extension && node src/md-to-org.js`
+Expected: FAIL — `emitHeading` still shifts/floors (and removed-option tests error).
+
+- [ ] **Step 3: Simplify `md-to-org.js`**
+
+Replace the heading-shift machinery (the `let shift = …`, the `let floorLevel = 0;` + `if (typeof options.headingMin …)` block, and the `emitHeading` definition) with:
+```js
+  const emitHeading = (rawLevel) => "*".repeat(Math.max(1, Math.min(8, rawLevel)));
+```
+In the blockquote branch change `mdToOrg(body.join("\n"), { headingShift: shift })` to `mdToOrg(body.join("\n"))`. Delete the `findMinHeadingLevel` function entirely.
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `cd extension && node src/md-to-org.js`
+Expected: PASS.
+
+- [ ] **Step 5: Drop `headingMin` from background + options**
+
+- `background.js`: remove `headingMin` from `DEFAULTS`; `bodyFromExtract` → `return mdToOrg(extract.markdown || "");` (and drop the `headingMin` arg it receives); remove the `headingMin` line in `buildCapturePayloadForTab`.
+- `options.html`: remove the heading-min input. `options.js`: remove `headingMin` from `DEFAULTS` and its clamp in `readForm`.
+
+- [ ] **Step 6: Full sweep + commit**
+
+Run: `cd extension && node src/md-to-org.js && node src/transport-orgproto.js && node src/transport.js`
+Expected: all PASS.
+```bash
+cd .. && git add extension/src/md-to-org.js extension/src/background.js extension/src/options.html extension/src/options.js
+git commit -m "refactor(ext): emit natural heading levels; drop headingMin (Emacs normalizes)"
+```
+
+---
+
 ## Self-Review notes (for the implementer)
 
-- **Spec coverage (Phase 1):** transport abstraction (T8/T9 selector + option, T5 emacs handler), default org-protocol (T6), shared `insert-clip` (T4), metadata drawer + `:ID:` (T2/T4), `:SOURCE:` naming + plain-text author + default `clippings` tag (T1/T2/T4), fill-body removal (T6), lean buffer (T3). HTTP (spec §6) is intentionally deferred to Phase 2.
+- **Spec coverage (Phase 1):** transport abstraction (T8/T9 selector + option, T5 emacs handler), default org-protocol (T6), shared `insert-clip` (T4), metadata drawer + `:ID:` (T2/T4), `:SOURCE:` naming + plain-text author + default `clippings` tag (T1/T2/T4), fill-body removal (T6), lean buffer (T3), **gapless heading normalization (T11)**, **md-to-org natural levels + drop headingMin (T12)**. HTTP (spec §6) is intentionally deferred to Phase 2.
 - **Risk points to watch:** (a) `org-end-of-meta-data`/`org-current-level` behavior on a freshly-created headline — the T4 prepend test guards it; (b) `org-protocol-parse-parameters` key names for non-standard params (`author`/`tags`/etc.) — the T5 test guards it, adjust the handler to the actual returned keys if needed; (c) `org-id-get-create` writes `~/.emacs.d/.../org-id-locations` — harmless in batch, but tests use temp files so registrations are throwaway.
 - **Type/name consistency:** payload keys (`template,url,title,body,tags,author,published,description,created`) are identical across `buildCapturePayloadForTab` (T8), `buildOrgProtocolUrl` (T7), the org-protocol handler (T5), and `org-clipper--insert-clip`/`--format-entry` (T2/T4).
