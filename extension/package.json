@@ -1,0 +1,7 @@
+{
+  "name": "org-clipper-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Marker so Node loads .js files in this directory as ES modules for running md-to-org self-tests. Chrome does not consume this file."
+}

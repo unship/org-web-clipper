@@ -1,0 +1,22 @@
+# Editor / OS
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Build / packaging artifacts
+*.zip
+*.crx
+*.pem
+dist/
+
+# Compiled elisp (regenerable)
+*.elc
+
+# Node (if we ever add tooling)
+node_modules/
+
+# Local secrets / installed manifests
+native-host/local/
+*.local.json

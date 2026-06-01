@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "org-clipper",
+  "version": "0.1.0",
+  "description": "Clip the current web page to an Emacs Org-mode file using Defuddle for article extraction.",
+
+  "icons": {
+    "16":  "icons/icon-16.png",
+    "48":  "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "action": {
+    "default_title": "Clip page to Org",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16":  "icons/icon-16.png",
+      "48":  "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+
+  "commands": {
+    "_execute_action": {
+      "description": "Open the org-clipper popup"
+    },
+    "clip-page": {
+      "description": "Clip the current page to Org without opening the popup"
+    }
+  }
+}

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>org-clipper — Options</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fdfdf7;
+        --fg: #1d1f24;
+        --muted: #687078;
+        --accent: #2e4a36;
+        --accent-fg: #f5f1e8;
+        --border: #d8d3c4;
+        --error-bg: #fbe9e9;
+        --error-fg: #8a2222;
+        --ok-bg: #e9f3ec;
+        --ok-fg: #1f5732;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1f221c;
+          --fg: #ece9dd;
+          --muted: #9aa19a;
+          --accent: #b6d6b9;
+          --accent-fg: #11140f;
+          --border: #383d33;
+          --error-bg: #3a1e1e;
+          --error-fg: #f4b5b5;
+          --ok-bg: #1c3324;
+          --ok-fg: #b3dfbe;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          system-ui, sans-serif;
+      }
+      main {
+        max-width: 640px;
+        margin: 32px auto;
+        padding: 0 24px 48px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        color: var(--muted);
+        margin: 0 0 24px;
+      }
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px 16px 16px;
+        margin: 0 0 20px;
+      }
+      legend {
+        padding: 0 6px;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin: 12px 0 4px;
+      }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        font: inherit;
+        background: var(--bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      input[type="text"]:focus, input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 4px 0 0;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      button {
+        padding: 8px 14px;
+        font: inherit;
+        font-weight: 600;
+        background: var(--accent);
+        color: var(--accent-fg);
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .status {
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 4px;
+        font-size: 13px;
+        white-space: pre-wrap;
+        display: none;
+      }
+      .status.ok   { display: block; background: var(--ok-bg);    color: var(--ok-fg); }
+      .status.err  { display: block; background: var(--error-bg); color: var(--error-fg); }
+      .status.info { display: block; background: transparent;     color: var(--muted); }
+      code { font-size: 13px; }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        background: transparent;
+        border-left: 2px solid var(--border);
+        padding: 4px 10px;
+        margin: 4px 0 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>org-clipper</h1>
+      <p class="lead">
+        Configure how clipped pages are handed to Emacs via
+        <code>org-protocol://capture</code>.
+      </p>
+
+      <div class="note">
+        The on-disk location of each clip is now determined by the
+        <code>org-capture</code> template in your Emacs config. See the
+        project README for a starter template; the key below must match.
+      </div>
+
+      <fieldset>
+        <legend>Capture</legend>
+
+        <label for="defaultTags">Default tags (space- or comma-separated)</label>
+        <input id="defaultTags" type="text" placeholder="webclip research" />
+        <p class="hint">
+          Merged with any tags entered in the popup. Allowed characters:
+          <code>A-Z a-z 0-9 _ @ #</code>. Tags are appended to the title
+          as Org's <code>:tag:</code> suffix so the template's
+          <code>%:description</code> picks them up automatically.
+        </p>
+
+        <label for="captureTemplate">org-capture template key</label>
+        <input id="captureTemplate" type="text" placeholder="w" maxlength="3" />
+        <p class="hint">
+          Single-letter key of the <code>org-capture-templates</code> entry
+          that handles clips. Default <code>w</code>.
+        </p>
+
+        <label for="headingMin">Body heading start level</label>
+        <input id="headingMin" type="number" min="1" max="8" />
+        <p class="hint">
+          Lowest <code>*</code> count assigned to body headings. The
+          converter auto-shifts so the source's lowest markdown heading
+          lands at this org level — keeps sub-headings contiguous under
+          the capture template's headline regardless of whether the
+          source uses <code>#</code>, <code>##</code> or <code>###</code>
+          as its top section level. Default <code>3</code> (good when the
+          outer template heads land at <code>**</code>).
+        </p>
+
+        <label for="subprotocol">org-protocol sub-protocol</label>
+        <input id="subprotocol" type="text" placeholder="capture" />
+        <p class="hint">
+          The path used in <code>org-protocol://<em>SUB</em>?…</code>.
+          Default <code>capture</code> (the built-in handler shipped with
+          Org). Change only if you have a custom sub-protocol registered.
+        </p>
+
+        <div class="actions">
+          <button id="save" type="button">Save</button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </fieldset>
+    </main>
+
+    <script src="options.js" type="module"></script>
+  </body>
+</html>
