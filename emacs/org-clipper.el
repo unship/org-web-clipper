@@ -76,6 +76,31 @@ manual `g'."
   :type 'boolean
   :group 'org-clipper)
 
+(defcustom org-clipper-default-tags '("clippings")
+  "Tags always merged into every clip's headline (newest-first order preserved)."
+  :type '(repeat string)
+  :group 'org-clipper)
+
+(defun org-clipper--sanitize-tag (tag)
+  "Return TAG reduced to a valid Org tag, or nil if it becomes empty."
+  (let* ((s (replace-regexp-in-string "[^[:alnum:]_@#%]+" "_" (string-trim (or tag ""))))
+         (s (replace-regexp-in-string "\\`_+\\|_+\\'" "" s)))
+    (and (> (length s) 0) s)))
+
+(defun org-clipper--merge-tags (tags)
+  "Merge `org-clipper-default-tags' with TAGS; sanitize, dedupe, keep order."
+  (let ((seen (make-hash-table :test 'equal)) out)
+    (dolist (tg (append org-clipper-default-tags tags))
+      (let ((s (org-clipper--sanitize-tag tg)))
+        (when (and s (not (gethash s seen)))
+          (puthash s t seen)
+          (push s out))))
+    (nreverse out)))
+
+(defun org-clipper--tags-string (tags)
+  "Render TAGS (a list) as Org's `:a:b:' suffix, or empty string."
+  (if tags (concat ":" (mapconcat #'identity tags ":") ":") ""))
+
 
 ;;; Visiting and refiling
 
