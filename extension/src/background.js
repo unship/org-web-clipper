@@ -3,16 +3,15 @@
 // Wiring after the v0.2 refactor (no more native messaging host):
 //
 //   popup (CLIP_TAB) ─┐
-//   command "clip-page" ─┴─> clipTab(tabId, opts)
+//   command "clip-page" ─┴─> buildCapturePayloadForTab(tabId, opts)
 //          ├─ chrome.scripting.executeScript -> Defuddle on the page
 //          ├─ md-to-org conversion
-//          ├─ buildCaptureUrl -> org-protocol://capture?...
-//          └─ chrome.tabs.create({active:false}) + tabs.remove after ~800ms
-//             (the OS routes the URL to emacsclient before the stub tab
-//              actually loads; we close it to leave no cruft behind).
+//          ├─ build a metadata payload {template,url,title,body,tags,...}
+//          └─ dispatchCapture(payload, cfg) -> transport.js selects by
+//             cfg.transport (org-protocol default; HTTP is Phase 2).
 
 import { mdToOrg }        from "./md-to-org.js";
-import { buildCaptureUrl } from "./capture-url.js";
+import { dispatchCapture } from "./transport.js";
 
 const DEFAULTS = {
   defaultTags:     "",
@@ -21,7 +20,7 @@ const DEFAULTS = {
   // them contiguous under a capture-template headline filed at level 2
   // (`* Web clips' -> `** Page Title' -> body starts at ***).
   headingMin:      3,
-  subprotocol:     "capture",
+  transport:       "org-protocol",
 };
 
 async function getConfig() {
@@ -47,50 +46,33 @@ function bodyFromExtract(extract, { selectionOnly, headingMin }) {
   return mdToOrg(extract.markdown || "", { headingMin });
 }
 
-// Fallback dispatch for the keyboard-command path (no popup is open, so we
-// cannot use the iframe trick). Opens an active tab so the user can see
-// any first-time confirmation dialog Chrome decides to surface.
-async function dispatchCaptureUrlFromBackground(url) {
-  console.log("org-clipper: bg-dispatching", url.length, "byte URL",
-              url.slice(0, 120) + (url.length > 120 ? "…" : ""));
-  const tab = await chrome.tabs.create({ url, active: true });
-  await new Promise((r) => setTimeout(r, 1500));
-  try { await chrome.tabs.remove(tab.id); } catch {}
-}
-
-// Build the capture URL for a tab. Does NOT dispatch — for the popup path
-// the popup itself dispatches via a hidden iframe (preserves user-gesture
-// origin and avoids Chrome's per-initiator external-protocol prompts).
-async function buildCaptureUrlForTab(tabId, { tags = [], selectionOnly = false } = {}) {
+// Build the capture payload for a tab. Does NOT dispatch — the transport
+// layer (transport.js) selects and performs dispatch by `cfg.transport`.
+async function buildCapturePayloadForTab(tabId, { tags = [], selectionOnly = false } = {}) {
   const cfg = await getConfig();
   const extract = await extractFromTab(tabId);
-
   const mergedTags = Array.from(new Set([
     ...cfg.defaultTags.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
     ...tags,
   ]));
-
   const body = bodyFromExtract(extract, {
-    selectionOnly,
-    headingMin: Number(cfg.headingMin) || DEFAULTS.headingMin,
+    selectionOnly, headingMin: Number(cfg.headingMin) || DEFAULTS.headingMin,
   });
-
-  const url = buildCaptureUrl(
-    { url: extract.url, title: extract.title, body, tags: mergedTags },
-    { template: cfg.captureTemplate, subprotocol: cfg.subprotocol },
-  );
-
-  if (url.length > 150000) {
-    console.warn(`org-clipper: capture URL is ${url.length} bytes; some OS protocol handlers truncate around 256KB.`);
-  }
-  console.log("org-clipper: built", url.length, "byte URL",
-              url.slice(0, 120) + (url.length > 120 ? "…" : ""));
-  return { url, urlBytes: url.length, title: extract.title };
+  return {
+    template: cfg.captureTemplate, url: extract.url, title: extract.title,
+    body, tags: mergedTags, author: extract.author, published: extract.published,
+    description: extract.description, created: (extract.capturedAt || "").slice(0, 10),
+  };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "CLIP_TAB") return;
-  buildCaptureUrlForTab(msg.tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly })
+  (async () => {
+    const payload = await buildCapturePayloadForTab(msg.tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly });
+    const cfg = await getConfig();
+    const r = await dispatchCapture(payload, cfg);   // returns {ok, urlBytes?}
+    return r;
+  })()
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
   return true; // async sendResponse
@@ -101,8 +83,9 @@ chrome.commands?.onCommand.addListener(async (cmd) => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || tab.id == null) return;
   try {
-    const { url } = await buildCaptureUrlForTab(tab.id, {});
-    await dispatchCaptureUrlFromBackground(url);
+    const payload = await buildCapturePayloadForTab(tab.id, {});
+    const cfg = await getConfig();
+    await dispatchCapture(payload, cfg);
     await chrome.action.setBadgeBackgroundColor({ color: "#2E4A36" });
     await chrome.action.setBadgeText({ text: "OK", tabId: tab.id });
     setTimeout(
@@ -121,4 +104,4 @@ chrome.commands?.onCommand.addListener(async (cmd) => {
 });
 
 // Surfaces for ad-hoc testing inside the service-worker devtools console.
-self.__orgClipper = { buildCaptureUrlForTab, bodyFromExtract, buildCaptureUrl, mdToOrg };
+self.__orgClipper = { buildCapturePayloadForTab, bodyFromExtract, dispatchCapture, mdToOrg };
