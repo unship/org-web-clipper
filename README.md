@@ -10,11 +10,12 @@ default transport opens an `org-protocol://org-clipper?…` URL — exactly
 the pattern obsidian-clipper uses with `obsidian://` — so there is no
 native-messaging host and no extra process.
 
-> Status: 0.2.0 — pluggable transport (Phase 1). org-protocol is the
-> default; an HTTP transport for very long captures is planned for
-> Phase 2 (see the [design spec][spec]).
+> Status: 0.3.0 — pluggable transport (Phase 1) + an HTTP transport for
+> very long captures (Phase 2) + local image attachments over HTTP
+> (Phase 3). org-protocol is the default.
 
 [spec]: docs/design/2026-06-01-pluggable-transport-design.md
+[images-spec]: docs/design/2026-06-01-image-attachments-design.md
 
 ## Transports
 
@@ -25,8 +26,8 @@ failing silently.
 
 | Transport      | Status            | Trade-off                                                                                  |
 | -------------- | ----------------- | ------------------------------------------------------------------------------------------ |
-| `org-protocol` | **default**       | Zero extra process. The whole body rides inside one URL, so very long pages can be truncated by the OS URL-length limit. |
-| `http`         | Phase 2 (opt-in)  | A `127.0.0.1` listener inside Emacs; no truncation, accurate ACK-after-save. See the [spec][spec]. |
+| `org-protocol` | **default**       | Zero extra process. The whole body rides inside one URL, so very long pages can be truncated by the OS URL-length limit. Images stay as remote `[[url]]` links. |
+| `http`         | opt-in            | A `127.0.0.1` listener inside Emacs; no truncation, accurate ACK-after-save, and **local image attachments** (see [Images](#images)). See the [spec][spec]. |
 
 Selecting `http` in the extension while Emacs is still on `org-protocol`
 (or vice versa) produces an explicit error.
@@ -77,6 +78,32 @@ There is **no `org-capture`** machinery and the old fill-on-finalize
 feature has been removed; the core itself writes everything the old
 capture hooks used to provide.
 
+## Images
+
+On the **HTTP transport**, a clip's images are embedded as local
+[`org-attach`](https://orgmode.org/manual/Attachments.html) attachments
+instead of bare remote links, so Org can display them natively and the
+clip survives the source going offline:
+
+- The extension background collects the image URLs from the converted
+  Org body, fetches their bytes (this is why the extension requests the
+  `*://*/*` host permission), and includes them base64-encoded in the
+  HTTP POST.
+- Emacs writes each image into the clip's own `org-attach` directory
+  (keyed by the entry's `:ID:`) and rewrites `[[url]]` →
+  `[[attachment:file]]`. Images that fail to fetch, are oversized, or
+  aren't actually images keep their original remote `[[url]]` — nothing
+  is lost.
+- After inserting a clip, the core calls `org-display-inline-images` so
+  the attachments show immediately in the live buffer. For files you
+  open later, set `(setq org-startup-with-inline-images t)` to
+  auto-display them (or toggle on demand with `org-toggle-inline-images`,
+  `C-c C-x C-v`); this also displays any remaining remote links.
+
+On the **org-protocol transport** no images are sent, so images stay as
+remote `[[url]]` links (still displayable via the inline-image
+commands). See the [image-attachments design spec][images-spec].
+
 ## Architecture
 
 ```
@@ -98,8 +125,8 @@ capture hooks used to provide.
                                      |    org-protocol -> transport-orgproto.js
                                      |      url = "org-protocol://org-clipper?
                                      |              template=w&url=...&title=...&body=..."
-                                     |    http         -> Phase 2
-                                     v          (OS routes the protocol)
+                                     |    http         -> transport-http.js
+                                     v          (POST to 127.0.0.1; images base64-encoded)
                        +-----------------------+        +--------------------+
                        |  emacsclient          |  -->   |  Emacs running     |
                        |  (default handler for |        |  org-protocol +    |
@@ -131,7 +158,9 @@ extension/
     content-extract.js       page-injected Defuddle driver
     md-to-org.js             markdown -> org converter (+ self-tests)
     transport-orgproto.js    builds/dispatches org-protocol://org-clipper URLs (+ self-tests)
+    transport-http.js        POSTs the clip to Emacs's 127.0.0.1 listener (+ self-tests)
     transport.js             transport selector (org-protocol | http) (+ self-tests)
+    fetch-images.js          collect + fetch + base64 a clip's images for the HTTP payload (+ self-tests)
     popup.html / popup.js    toolbar popup UI
     options.html / options.js  settings page
   package.json               type:module marker for node-based tests
@@ -302,24 +331,27 @@ All settings live in the extension's Options page and persist via
 | ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
 | Default tags     | (empty)        | Space- or comma-separated tags merged with popup tags (and with Emacs's `org-clipper-default-tags`).          |
 | Capture template | `w`            | Selects an org-clipper capture profile in Emacs. No longer an `org-capture-templates` key.                    |
-| Transport        | `org-protocol` | How clips reach Emacs. `org-protocol` (default) or `http` (Phase 2). Must match `org-clipper-transport`.      |
+| Transport        | `org-protocol` | How clips reach Emacs. `org-protocol` (default) or `http` (embeds local image attachments). Must match `org-clipper-transport`. |
 
 Heading levels are normalized in Emacs, so the browser-side heading-shift
 option and the org-protocol sub-protocol option are both gone.
 
 ## Security model
 
-- Clips travel exclusively over OS-level URL dispatch (org-protocol
-  transport). Any local process able to open an `org-protocol://` URL
+- On the default org-protocol transport, clips travel over OS-level URL
+  dispatch. Any local process able to open an `org-protocol://` URL
   (just like `obsidian://`, `slack://`, `zoommtg://`, etc.) can trigger
   Emacs to file a clip. Treat that the way you treat any custom scheme
   handler.
 - The extension only opens URLs it constructed itself in the service
   worker, with fields taken from the page Defuddle extracted and the
-  user's options. No external network host, no executable spawned by
-  the extension, no persistent local server (the HTTP transport, when it
-  lands in Phase 2, binds `127.0.0.1` only and is gated by a shared
-  token — see the [spec][spec]).
+  user's options. On the org-protocol transport there is no external
+  network host, no executable spawned by the extension, and no persistent
+  local server. The HTTP transport binds a `127.0.0.1`-only listener
+  inside Emacs, gated by a shared token; on it the extension also fetches
+  the page's images directly (the `*://*/*` host permission) and sends
+  their bytes in the POST body — see the [spec][spec] and the
+  [image-attachments spec][images-spec].
 - The capture core runs *inside Emacs* and writes only to the
   configured target file. The payload is treated as data, never code —
   `url`/`title`/`body`/`tags` are inserted as literal text and nothing
@@ -327,17 +359,20 @@ option and the org-protocol sub-protocol option are both gone.
 - The dispatch tab created by `chrome.tabs.create({active:false})` is
   closed about a second after the OS hands the URL off, so the user's
   tab strip stays clean.
-- Body content is URL-encoded; very long articles produce long URLs.
-  Most OS protocol dispatchers handle several hundred KB, but if you
-  routinely clip multi-MB pages, switch to the HTTP transport (Phase 2)
-  to avoid truncation.
+- On the org-protocol transport the body content is URL-encoded, so very
+  long articles produce long URLs. Most OS protocol dispatchers handle
+  several hundred KB, but if you routinely clip multi-MB pages (or want
+  local image attachments), switch to the HTTP transport to avoid
+  truncation.
 
 ## Development and testing
 
 ```sh
 # Extension self-tests (Node)
 cd extension && node src/md-to-org.js          # markdown -> org
+cd extension && node src/fetch-images.js       # image collect/fetch/base64
 cd extension && node src/transport-orgproto.js # org-protocol URL build/round-trip
+cd extension && node src/transport-http.js     # HTTP POST payload
 cd extension && node src/transport.js          # transport selector
 
 # Emacs ERT tests (batch)
