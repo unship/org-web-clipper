@@ -37,7 +37,14 @@
 
   let r;
   try {
-    const instance = new Defuddle(document, {
+    // Parse a DETACHED CLONE so extraction can never mutate the live page.
+    // (Defuddle reads the live doc for shadow-roots/media-queries; cloning makes
+    // even those reads operate on a throwaway copy.) Strip our own reading-mode
+    // overlay from the clone so it is never treated as content.
+    const clone = document.cloneNode(true);
+    clone.getElementById("org-clipper-reader")?.remove();
+    Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
+    const instance = new Defuddle(clone, {
       markdown: true,
       url: location.href,
       standardize: true,
