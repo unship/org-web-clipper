@@ -11,6 +11,7 @@ const els = {
   tags:   $("tags"),
   selOnly:$("selection-only"),
   clip:   $("clip-btn"),
+  reader: $("reader-btn"),
   cancel: $("cancel-btn"),
   status: $("status"),
   opts:   $("open-options"),
@@ -78,6 +79,21 @@ async function clip() {
   }
 }
 
+async function toggleReader() {
+  const tabId = Number(els.clip.dataset.tabId);
+  if (!Number.isFinite(tabId)) {
+    setStatus("err", "Lost reference to the active tab.");
+    return;
+  }
+  try {
+    await chrome.runtime.sendMessage({ type: "TOGGLE_READER", tabId });
+    window.close();
+  } catch (e) {
+    setStatus("err", String(e && e.message ? e.message : e));
+  }
+}
+
+els.reader.addEventListener("click", toggleReader);
 els.clip.addEventListener("click", clip);
 els.cancel.addEventListener("click", () => window.close());
 els.opts.addEventListener("click", (e) => {
