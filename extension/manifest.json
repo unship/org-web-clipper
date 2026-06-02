@@ -47,6 +47,10 @@
     },
     "clip-page": {
       "description": "Clip the current page to Org without opening the popup"
+    },
+    "toggle-reader": {
+      "suggested_key": { "default": "Alt+R" },
+      "description": "Toggle reading mode"
     }
   }
 }
