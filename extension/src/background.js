@@ -62,10 +62,31 @@ async function buildCapturePayloadForTab(tabId, { tags = [], selectionOnly = fal
   };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!msg || msg.type !== "CLIP_TAB") return;
+// Inject + (re)run the reading-mode controller. reader.js is idempotent: each
+// run toggles. defuddle + reader-doc are cheap to re-define on re-injection.
+async function toggleReaderInTab(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["lib/defuddle.js", "src/reader-doc.js", "src/reader.js"],
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg) return;
+
+  if (msg.type === "TOGGLE_READER") {
+    const tabId = msg.tabId ?? sender.tab?.id;
+    if (tabId == null) { sendResponse({ ok: false, error: "no tab" }); return; }
+    toggleReaderInTab(tabId)
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
+    return true; // async sendResponse
+  }
+
+  if (msg.type !== "CLIP_TAB") return;
+  const tabId = msg.tabId ?? sender.tab?.id;   // reader-initiated clips have no tabId
   (async () => {
-    const payload = await buildCapturePayloadForTab(msg.tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly });
+    const payload = await buildCapturePayloadForTab(tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly });
     const cfg = await getConfig();
     if ((cfg.transport || "org-protocol") === "http") {
       payload.images = await fetchImages(collectImageUrls(payload.body));
@@ -79,6 +100,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 chrome.commands?.onCommand.addListener(async (cmd) => {
+  if (cmd === "toggle-reader") {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id != null) await toggleReaderInTab(tab.id);
+    return;
+  }
   if (cmd !== "clip-page") return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || tab.id == null) return;
