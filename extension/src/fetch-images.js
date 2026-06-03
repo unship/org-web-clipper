@@ -1,6 +1,10 @@
 // Collect + fetch a clip's images for the HTTP transport. No `chrome` deps.
 
 const IMG_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\?[^\]]*)?$/i;
+// Extensionless CDN image URLs that declare their format in the query string,
+// e.g. Twitter/X `?format=png&name=large`, Unsplash `&fm=jpg`. A false positive
+// is harmless: fetchOne still skips any response whose content-type isn't image/*.
+const IMG_FORMAT_QUERY = /[?&](?:format|fm)=(?:png|jpe?g|gif|webp|avif|bmp|svg)\b/i;
 
 // Image links from the converted Org body, in BOTH the bare `[[url]]' and the
 // descriptive `[[url][desc]]' form (e.g. GitHub linked images, where md-to-org
@@ -14,7 +18,7 @@ export function collectImageUrls(orgBody) {
   let m;
   while ((m = re.exec(orgBody)) !== null) {
     const url = m[1];
-    const isImg = url.startsWith("data:image/") || IMG_EXT.test(url);
+    const isImg = url.startsWith("data:image/") || IMG_EXT.test(url) || IMG_FORMAT_QUERY.test(url);
     if (isImg && !seen.has(url)) { seen.add(url); out.push(url); }
   }
   return out;
@@ -109,6 +113,16 @@ if (isMain) {
         "[[https://x/a.png][ R0 ]] and [[https://gh/raw/vss-architecture.png][diagram]] and [[https://x/page][text]]"))
         === JSON.stringify(["https://x/a.png", "https://gh/raw/vss-architecture.png"]),
       "collects image urls in [[url][desc]] form; still ignores non-image [[url][desc]]");
+
+    check(
+      JSON.stringify(collectImageUrls(
+        "[[https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large]] and " +
+        "[[https://images.unsplash.com/photo-1?ixlib=rb&fm=jpg&q=80]] and " +
+        "[[https://x/api?format=json]]"))
+        === JSON.stringify([
+          "https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large",
+          "https://images.unsplash.com/photo-1?ixlib=rb&fm=jpg&q=80"]),
+      "collects extensionless image urls whose format is a query param (?format=png, &fm=jpg); ignores ?format=json");
 
     const enc = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
     const mk = (status, ct, body) => ({
