@@ -3,5 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Marker so Node loads .js files in this directory as ES modules for running md-to-org self-tests. Chrome does not consume this file."
+  "description": "Pins the vendored Defuddle dependency (npm install locks it via package-lock.json; `npm run vendor:defuddle` copies it into lib/defuddle.js) and marks this directory as ESM so Node can run the md-to-org self-tests. Chrome loads the files under src/ and lib/ directly; it never consumes this package.json or node_modules.",
+  "scripts": {
+    "vendor:defuddle": "cp node_modules/defuddle/dist/index.full.js lib/defuddle.js"
+  },
+  "dependencies": {
+    "defuddle": "0.18.1"
+  }
 }
