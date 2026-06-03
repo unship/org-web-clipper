@@ -51,8 +51,8 @@ Both transports converge on one shared Emacs core,
 :ID:          A1B2C3D4-...
 :SOURCE:      https://example.com/article
 :AUTHOR:      David Álvarez Rosa
-:PUBLISHED:   2026-03-28
-:CREATED:     [2026-05-24 Sun]
+:PUBLISHED:   <2026-03-28>
+:CREATED:     <2026-05-24 Sun>
 :DESCRIPTION: A single-producer single-consumer queue …
 :END:
 

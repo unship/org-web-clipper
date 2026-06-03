@@ -92,10 +92,21 @@ manual `g'."
   (if tags (concat ":" (mapconcat #'identity tags ":") ":") ""))
 
 (defun org-clipper--created-stamp (created)
-  "Inactive Org timestamp for CREATED (a date string), or today if empty."
+  "Active Org timestamp for CREATED (a date string), or today if empty."
   (if (and created (string-match-p "[0-9]" created))
-      (format "[%s]" (string-trim created))
-    (format-time-string "[%Y-%m-%d %a]")))
+      (format "<%s>" (string-trim created))
+    (format-time-string "<%Y-%m-%d %a>")))
+
+(defun org-clipper--published-stamp (published)
+  "Active Org timestamp <YYYY-MM-DD> for PUBLISHED, or nil when empty.
+PUBLISHED may be a full ISO datetime (as Defuddle often returns); only the
+date is kept.  A non-empty value with no parseable date is passed through
+unchanged rather than wrapped, to avoid fabricating an invalid timestamp."
+  (when (and published (> (length (string-trim published)) 0))
+    (let ((s (string-trim published)))
+      (if (string-match "[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}" s)
+          (format "<%s>" (match-string 0 s))
+        s))))
 
 (defun org-clipper--relevel-body (body base)
   "Re-level Org headings in BODY so the shallowest becomes BASE and nesting is
@@ -126,9 +137,9 @@ after insertion).  Empty optional properties are omitted.  TAGS is a list."
     (let ((author (plist-get clip :author)))
       (when (and author (> (length (string-trim author)) 0))
         (push (cons "AUTHOR" (string-trim author)) props)))
-    (let ((published (plist-get clip :published)))
-      (when (and published (> (length (string-trim published)) 0))
-        (push (cons "PUBLISHED" (string-trim published)) props)))
+    (let ((published (org-clipper--published-stamp (plist-get clip :published))))
+      (when published
+        (push (cons "PUBLISHED" published) props)))
     (push (cons "CREATED" (org-clipper--created-stamp (plist-get clip :created))) props)
     (let ((description (plist-get clip :description)))
       (when (and description (> (length (string-trim description)) 0))

@@ -28,14 +28,40 @@
     (should (string-match-p ":PROPERTIES:\n" txt))
     (should (string-match-p "^:SOURCE: https://x/p$" txt))
     (should (string-match-p "^:AUTHOR: David Rosa$" txt))
-    (should (string-match-p "^:CREATED: \\[2026-03-28\\]$" txt))
+    (should (string-match-p "^:CREATED: <2026-03-28>$" txt))
     (should (string-match-p "^:DESCRIPTION: A SPSC queue.$" txt))
     (should-not (string-match-p ":PUBLISHED:" txt))   ; empty omitted
     (should (string-suffix-p "** body\ntext\n" txt))))
 
 (ert-deftest org-clipper-test-created-defaults-to-today ()
-  (should (string-match-p "\\`\\[[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
+  (should (string-match-p "\\`<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
                           (org-clipper--created-stamp nil))))
+
+(ert-deftest org-clipper-test-published-stamp-active ()
+  (should (equal (org-clipper--published-stamp "2024-01-15") "<2024-01-15>")))
+
+(ert-deftest org-clipper-test-published-stamp-normalizes-iso-datetime ()
+  ;; Defuddle often hands back a full ISO datetime; keep only the date.
+  (should (equal (org-clipper--published-stamp "2024-01-15T08:00:00.000Z")
+                 "<2024-01-15>")))
+
+(ert-deftest org-clipper-test-published-stamp-empty-is-nil ()
+  ;; nil => caller omits the :PUBLISHED: property entirely.
+  (should (null (org-clipper--published-stamp nil)))
+  (should (null (org-clipper--published-stamp "")))
+  (should (null (org-clipper--published-stamp "   "))))
+
+(ert-deftest org-clipper-test-published-stamp-passes-through-non-date ()
+  ;; No parseable date => keep the raw value rather than fabricate a stamp.
+  (should (equal (org-clipper--published-stamp "  sometime in 2024 ") "sometime in 2024")))
+
+(ert-deftest org-clipper-test-format-entry-published-and-created-active ()
+  (let ((txt (org-clipper--format-entry
+              2 "T" '("clippings")
+              (list :url "u" :published "2024-01-15T08:00:00.000Z"
+                    :created "2026-03-28" :body "x"))))
+    (should (string-match-p "^:PUBLISHED: <2024-01-15>$" txt))
+    (should (string-match-p "^:CREATED: <2026-03-28>$" txt))))
 
 (ert-deftest org-clipper-test-capture-target-buffer-is-lean-and-reused ()
   (let* ((tmp (make-temp-file "oc-t" nil ".org"))
