@@ -44,6 +44,7 @@
     const clone = document.cloneNode(true);
     clone.getElementById("org-clipper-reader")?.remove();
     Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
+    self.OrgClipperDomPrep?.prepCloneForExtract(clone);
     const instance = new Defuddle(clone, {
       markdown: true,
       url: location.href,

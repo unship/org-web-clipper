@@ -29,7 +29,7 @@ async function getConfig() {
 async function extractFromTab(tabId) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    files:  ["lib/defuddle.js", "src/content-extract.js"],
+    files:  ["lib/defuddle.js", "src/dom-prep.js", "src/content-extract.js"],
   });
   const last = results[results.length - 1];
   if (!last || last.result == null) {
@@ -67,7 +67,7 @@ async function buildCapturePayloadForTab(tabId, { tags = [], selectionOnly = fal
 async function toggleReaderInTab(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ["lib/defuddle.js", "src/reader-doc.js", "src/reader.js"],
+    files: ["lib/defuddle.js", "src/dom-prep.js", "src/reader-doc.js", "src/reader.js"],
   });
 }
 

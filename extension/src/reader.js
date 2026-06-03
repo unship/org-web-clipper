@@ -55,6 +55,7 @@ a { color: #2e4a36; }
     const clone = document.cloneNode(true);
     clone.getElementById(READER_ID)?.remove();
     Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
+    self.OrgClipperDomPrep?.prepCloneForExtract(clone);
     const r = new self.Defuddle(clone, {
       url: location.href, standardize: true, removeImages: false,
     }).parse();

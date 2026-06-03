@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>defuddle + dom-prep end-to-end</title>
+    <script src="../lib/defuddle.js"></script>
+    <script src="../src/dom-prep.js"></script>
+  </head>
+  <body>
+    <article>
+      <h1>A trivial request: comparing coding harnesses</h1>
+      <p>
+        Anyone following the evolution of coding agents closely has probably heard about the
+        minimalist harness debate. This paragraph exists to give the extractor enough real
+        prose to treat the article as content rather than boilerplate, so the diagram below is
+        kept in context. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+      </p>
+      <p>The flow looks like this:</p>
+      <pre
+        class="mermaid-chart"
+        data-processed="true"
+        data-mermaid-src="flowchart LR&#10;  H --&gt;|OpenAI-style request| G[LiteLLM Gateway]&#10;  G --&gt;|converse API| B[AWS Bedrock]"
+      ><svg id="mermaid-1780444688589"><style>#mermaid-1780444688589{font-family:"trebuchet ms";fill:#ccc}#mermaid-1780444688589 .node rect{fill:#1f2020}</style><g class="node"><text>Coding agent (CLI)</text></g><g class="node"><text>LiteLLM Gateway</text></g><g class="node"><text>AWS Bedrock</text></g></svg></pre>
+      <p>
+        For each agent we saved three artifacts and inspected the payload sent to the model.
+        This trailing paragraph again pads the article with genuine text so the readability
+        extractor anchors on the body and does not discard it. More lorem ipsum to be safe.
+      </p>
+    </article>
+    <div id="result">running…</div>
+    <script>
+      (function () {
+        const out = [];
+        const check = (n, c) => out.push((c ? "PASS" : "FAIL") + ": " + n);
+        try {
+          const Defuddle = self.Defuddle;
+          check("Defuddle loaded", typeof Defuddle === "function");
+          check("dom-prep loaded", !!(self.OrgClipperDomPrep && self.OrgClipperDomPrep.prepCloneForExtract));
+
+          // Mirror content-extract.js exactly.
+          const clone = document.cloneNode(true);
+          clone.getElementById("result")?.remove();
+          Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
+          self.OrgClipperDomPrep.prepCloneForExtract(clone);
+          const r = new Defuddle(clone, {
+            markdown: true,
+            url: location.href,
+            standardize: true,
+            removeImages: false,
+          }).parse();
+          const md = String(r.content || "");
+
+          check("extractor kept the article (non-empty)", md.length > 40);
+          check("NO #mermaid CSS leaked into markdown", !/#mermaid-1780444688589\{/.test(md));
+          check("NO injected font-family CSS leaked", !/trebuchet ms/.test(md));
+          check("mermaid SOURCE recovered in markdown", /flowchart LR/.test(md) && /LiteLLM Gateway/.test(md));
+        } catch (e) {
+          check("threw: " + e.message, false);
+        }
+        const verdicts = out.filter((x) => x.startsWith("PASS") || x.startsWith("FAIL"));
+        const ok = verdicts.length > 0 && verdicts.every((x) => x.startsWith("PASS"));
+        document.getElementById("result").textContent = (ok ? "ALL PASS" : "FAILED") + " :: " + out.join(" | ");
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>dom-prep fixture</title>
+    <!-- Loads the REAL helper. If the file is missing, the global is undefined
+         and the "fix" checks below record FAIL (the red phase). -->
+    <script src="../src/dom-prep.js"></script>
+  </head>
+  <body>
+    <div id="result">running…</div>
+    <script>
+      (function () {
+        const results = [];
+        const check = (name, cond) => results.push((cond ? "PASS" : "FAIL") + ": " + name);
+
+        // A post-render Mermaid block: <pre class="mermaid-chart"> whose original
+        // source the theme stashed in data-mermaid-src, now holding an <svg> with
+        // an injected <style> + concatenated <text> labels. This is exactly what
+        // Defuddle sees on the live page.
+        const page = document.createElement("div");
+        page.innerHTML =
+          '<p class="keep">Intro paragraph.</p>' +
+          '<pre class="mermaid-chart" data-processed="true" ' +
+          'data-mermaid-src="flowchart LR&#10;  A--&gt;B&#10;  B--&gt;C">' +
+          '<svg id="mermaid-1"><style>#mermaid-1{fill:#ccc;font-family:x}</style>' +
+          "<g><text>A</text><text>B</text><text>C</text></g></svg>" +
+          "</pre>" +
+          '<p class="keep">Outro paragraph.</p>';
+
+        // Repro: confirm the rendered <pre> really does carry the CSS + labels.
+        const preText = page.querySelector("pre").textContent;
+        check("repro: pre textContent carries injected CSS", /#mermaid-1\{fill/.test(preText));
+        check("repro: pre textContent carries concatenated labels", /ABC/.test(preText.replace(/\s+/g, "")));
+
+        // Fix: run the real helper on a clone (mirrors extraction).
+        try {
+          if (!globalThis.OrgClipperDomPrep || typeof globalThis.OrgClipperDomPrep.prepCloneForExtract !== "function") {
+            throw new Error("OrgClipperDomPrep.prepCloneForExtract not loaded");
+          }
+          const clone = page.cloneNode(true);
+          globalThis.OrgClipperDomPrep.prepCloneForExtract(clone);
+
+          check("fix: no <style> remains", clone.querySelectorAll("style").length === 0);
+          check("fix: no <svg> remains", clone.querySelectorAll("svg").length === 0);
+          const code = clone.querySelector("pre code.language-mermaid");
+          check(
+            "fix: mermaid source recovered into language-mermaid code",
+            !!code && /flowchart LR/.test(code.textContent) && /A-->B/.test(code.textContent),
+          );
+          check("fix: paragraphs preserved", clone.querySelectorAll("p.keep").length === 2);
+          check("fix: no CSS leak in cleaned pre", !/#mermaid-1\{/.test(clone.querySelector("pre").textContent));
+
+          // Drop case: no source attribute -> svg dropped, no garbage left.
+          const page2 = document.createElement("div");
+          page2.innerHTML = '<pre class="mermaid"><svg><style>#m{fill:red}</style><text>X</text></svg></pre>';
+          globalThis.OrgClipperDomPrep.prepCloneForExtract(page2);
+          check("drop: svg+style removed when no source attr", page2.querySelectorAll("svg,style").length === 0);
+        } catch (e) {
+          check("helper ran: " + e.message, false);
+        }
+
+        const ok = results.length > 0 && results.every((r) => r.startsWith("PASS"));
+        document.getElementById("result").textContent = (ok ? "ALL PASS" : "FAILED") + " :: " + results.join(" | ");
+      })();
+    </script>
+  </body>
+</html>
