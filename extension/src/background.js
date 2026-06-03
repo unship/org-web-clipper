@@ -12,7 +12,7 @@
 
 import { mdToOrg }        from "./md-to-org.js";
 import { dispatchCapture } from "./transport.js";
-import { collectImageUrls, fetchImages } from "./fetch-images.js";
+import { collectImageUrls, collectMarkdownImageUrls, fetchImages } from "./fetch-images.js";
 
 const DEFAULTS = {
   defaultTags:     "",
@@ -59,7 +59,19 @@ async function buildCapturePayloadForTab(tabId, { tags = [], selectionOnly = fal
     template: cfg.captureTemplate, url: extract.url, title: extract.title,
     body, tags: mergedTags, author: extract.author, published: extract.published,
     description: extract.description, created: (extract.capturedAt || "").slice(0, 10),
+    imageUrls: collectMarkdownImageUrls(extract.markdown),   // collection-only; stripped before dispatch
   };
+}
+
+// HTTP transport only: fetch the clip's images and attach them to the payload.
+// Images are the body links the browser's Markdown marked as images
+// (`payload.imageUrls`), unioned with URL-pattern fallbacks. `imageUrls` is a
+// collection-only field and is never dispatched to Emacs.
+async function maybeAttachImages(payload, cfg) {
+  if ((cfg.transport || "org-protocol") === "http") {
+    payload.images = await fetchImages(collectImageUrls(payload.body, payload.imageUrls));
+  }
+  delete payload.imageUrls;
 }
 
 // Inject + (re)run the reading-mode controller. reader.js is idempotent: each
@@ -88,9 +100,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     const payload = await buildCapturePayloadForTab(tabId, { tags: msg.tags, selectionOnly: msg.selectionOnly });
     const cfg = await getConfig();
-    if ((cfg.transport || "org-protocol") === "http") {
-      payload.images = await fetchImages(collectImageUrls(payload.body));
-    }
+    await maybeAttachImages(payload, cfg);
     const r = await dispatchCapture(payload, cfg);   // returns {ok, urlBytes?}
     return r;
   })()
@@ -111,9 +121,7 @@ chrome.commands?.onCommand.addListener(async (cmd) => {
   try {
     const payload = await buildCapturePayloadForTab(tab.id, {});
     const cfg = await getConfig();
-    if ((cfg.transport || "org-protocol") === "http") {
-      payload.images = await fetchImages(collectImageUrls(payload.body));
-    }
+    await maybeAttachImages(payload, cfg);
     await dispatchCapture(payload, cfg);
     await chrome.action.setBadgeBackgroundColor({ color: "#2E4A36" });
     await chrome.action.setBadgeText({ text: "OK", tabId: tab.id });

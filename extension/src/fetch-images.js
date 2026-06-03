@@ -6,19 +6,38 @@ const IMG_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:\?[^\]]*)?$/i;
 // is harmless: fetchOne still skips any response whose content-type isn't image/*.
 const IMG_FORMAT_QUERY = /[?&](?:format|fm)=(?:png|jpe?g|gif|webp|avif|bmp|svg)\b/i;
 
-// Image links from the converted Org body, in BOTH the bare `[[url]]' and the
-// descriptive `[[url][desc]]' form (e.g. GitHub linked images, where md-to-org
-// emits a link rather than a bare image). Only image-like URLs (image
-// extension or data:image) are collected; non-image links are ignored. Emacs
-// rewrites either form to a bare `[[attachment:FILE]]' on embed.
-export function collectImageUrls(orgBody) {
+// Image URLs that Defuddle's MARKDOWN marks unambiguously as images via `![alt](url)`.
+// md-to-org turns these into bare `[[url]]', discarding the `!' marker, so they must
+// be captured from the markdown. The URL is captured exactly as md-to-org captures it,
+// so the strings match the Org body's `[[url]]'. Plain links `[text](url)' are excluded.
+export function collectMarkdownImageUrls(markdown) {
   const out = [];
   const seen = new Set();
+  const re = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
+  let m;
+  while ((m = re.exec(String(markdown || ""))) !== null) {
+    const url = m[1];
+    if (!seen.has(url)) { seen.add(url); out.push(url); }
+  }
+  return out;
+}
+
+// Image links from the converted Org body, in BOTH the bare `[[url]]' and the
+// descriptive `[[url][desc]]' form (e.g. GitHub linked images, where md-to-org
+// emits a link rather than a bare image). A URL is treated as an image when it is in
+// KNOWNIMAGEURLS (the authoritative `![]()' markers from `collectMarkdownImageUrls'),
+// or, as a fallback, looks like one (image extension, `?format=' query, or data:image).
+// Non-image links are ignored. Emacs rewrites either form to `[[attachment:FILE]]'.
+export function collectImageUrls(orgBody, knownImageUrls = []) {
+  const out = [];
+  const seen = new Set();
+  const known = new Set(knownImageUrls);
   const re = /\[\[((?:https?:|data:)[^\]]+?)\](?:\[[^\]]*\])?\]/g;
   let m;
   while ((m = re.exec(orgBody)) !== null) {
     const url = m[1];
-    const isImg = url.startsWith("data:image/") || IMG_EXT.test(url) || IMG_FORMAT_QUERY.test(url);
+    const isImg = url.startsWith("data:image/") || known.has(url)
+      || IMG_EXT.test(url) || IMG_FORMAT_QUERY.test(url);
     if (isImg && !seen.has(url)) { seen.add(url); out.push(url); }
   }
   return out;
@@ -123,6 +142,29 @@ if (isMain) {
           "https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large",
           "https://images.unsplash.com/photo-1?ixlib=rb&fm=jpg&q=80"]),
       "collects extensionless image urls whose format is a query param (?format=png, &fm=jpg); ignores ?format=json");
+
+    check(
+      JSON.stringify(collectMarkdownImageUrls(
+        "![a](https://x/u1) and [link](https://x/u2) and ![](https://x/u3) text"))
+        === JSON.stringify(["https://x/u1", "https://x/u3"]),
+      "collectMarkdownImageUrls: image markers only (![]()), not links ([]())");
+
+    check(
+      JSON.stringify(collectImageUrls("see [[https://cdn/opaque-id]] here", ["https://cdn/opaque-id"]))
+        === JSON.stringify(["https://cdn/opaque-id"]),
+      "collectImageUrls: extensionless body link IS collected when in the known (markdown) set");
+
+    check(
+      JSON.stringify(collectImageUrls("see [[https://cdn/opaque-id]] here", []))
+        === JSON.stringify([]),
+      "collectImageUrls: same link NOT collected without a known-set or heuristic match");
+
+    check(
+      JSON.stringify(collectImageUrls(
+        "#+CAPTION: Image\n[[https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large]]",
+        collectMarkdownImageUrls("![Image](https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large)")))
+        === JSON.stringify(["https://pbs.twimg.com/media/HJvSybFbYAA5haL?format=png&name=large"]),
+      "twitter scenario: the ![]() marker drives collection of the extensionless twimg image");
 
     const enc = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
     const mk = (status, ct, body) => ({
