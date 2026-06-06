@@ -146,6 +146,17 @@ after insertion).  Empty optional properties are omitted.  TAGS is a list."
         (push (cons "DESCRIPTION"
                     (replace-regexp-in-string "[\n\r]+" " " (string-trim description)))
               props)))
+    ;; Extra (non-standard) template properties, a plist with keyword keys
+    ;; (e.g. (:READING_TIME "5 min" :SECTION "News")), appended after the
+    ;; standard keys.  Empty values are omitted.
+    (let ((extra (plist-get clip :properties)))
+      (while extra
+        (let ((key (substring (symbol-name (car extra)) 1))
+              (val (cadr extra)))
+          (when (and (stringp val) (> (length (string-trim val)) 0))
+            (push (cons key (replace-regexp-in-string "[\n\r]+" " " (string-trim val)))
+                  props)))
+        (setq extra (cddr extra))))
     (setq props (nreverse props))
     (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") (1+ level))))
       (concat
@@ -267,11 +278,50 @@ of successfully-written images; failures are skipped."
                 nil t)
           (replace-match (concat "[[attachment:" (cdr pair) "]]") t t))))))
 
+(defun org-clipper--sanitize-text (s)
+  "Return string S stripped of NUL and other C0 control characters.
+Web clips occasionally carry stray control bytes (NUL, form-feed, …).
+Once one is written into an Org file, Emacs auto-detects the file as
+*binary* on the next read and loads it UNDECODED -- every multibyte char
+becomes a raw eight-bit byte, which corrupts downstream parsers
+\(vulpea/org-roam) and pops a `select-safe-coding-system' prompt on the
+next save.  TAB, LF and CR are preserved; the rest of the C0 range plus
+DEL is removed.  Non-strings pass through untouched."
+  (if (stringp s)
+      (replace-regexp-in-string
+       (rx (any (?\C-@ . ?\C-h) ?\C-k ?\C-l (?\C-n . ?\C-_) ?\C-?))
+       "" s t t)
+    s))
+
+(defun org-clipper--sanitize-clip (clip)
+  "Return a copy of clip plist CLIP with its textual fields sanitized.
+Strips control characters (see `org-clipper--sanitize-text') so no clip
+can write a NUL into an Org file.  This is the single guard for every
+transport: both the `org-protocol' and HTTP handlers funnel through
+`org-clipper--insert-clip', which calls this first."
+  (let ((out (copy-sequence clip)))
+    (dolist (k '(:template :url :title :body :author :published
+                 :description :created))
+      (when (plist-member out k)
+        (setq out (plist-put out k (org-clipper--sanitize-text (plist-get out k))))))
+    (when (plist-member out :tags)
+      (setq out (plist-put out :tags
+                           (mapcar #'org-clipper--sanitize-text (plist-get out :tags)))))
+    ;; Extra properties are a plist (:KEY "value" …); sanitize each value.
+    (when (plist-member out :properties)
+      (let ((src (plist-get out :properties)) (clean '()))
+        (while src
+          (setq clean (plist-put clean (car src) (org-clipper--sanitize-text (cadr src))))
+          (setq src (cddr src)))
+        (setq out (plist-put out :properties clean))))
+    out))
+
 (defun org-clipper--insert-clip (clip)
   "Insert web-clip plist CLIP into the target file; return the file path.
 Plist keys: :template :url :title :body :tags :author :published
-:description :created.  Bypasses org-capture; writes a metadata drawer and a
-fresh :ID:."
+:description :created :properties (extra drawer props, a keyword-keyed plist).
+Bypasses org-capture; writes a metadata drawer and a fresh :ID:."
+  (setq clip (org-clipper--sanitize-clip clip))
   (let* ((file (org-clipper--capture-target-file))
          (buf  (find-buffer-visiting file))
          (tags (org-clipper--merge-tags (plist-get clip :tags))))
@@ -444,6 +494,7 @@ the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
                              :published (plist-get p :published)
                              :description (plist-get p :description)
                              :created (plist-get p :created)
+                             :properties (plist-get p :properties)
                              :images (plist-get p :images))))
             (unless (and (plist-get clip :url) (> (length (plist-get clip :url)) 0))
               (error "missing url"))

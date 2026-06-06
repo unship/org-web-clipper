@@ -63,6 +63,31 @@
     (should (string-match-p "^:PUBLISHED: <2024-01-15>$" txt))
     (should (string-match-p "^:CREATED: <2026-03-28>$" txt))))
 
+(ert-deftest org-clipper-test-format-entry-extra-properties ()
+  "Non-standard template properties land in the drawer, after the standard keys."
+  (let ((txt (org-clipper--format-entry
+              2 "T" '("clippings")
+              (list :url "https://x" :created "2026-03-28" :body "x"
+                    :properties '(:READING_TIME "5 min" :SECTION "News")))))
+    (should (string-match-p "^:READING_TIME: 5 min$" txt))
+    (should (string-match-p "^:SECTION: News$" txt))
+    (should (string-match-p "^:SOURCE: https://x$" txt))
+    (should (< (string-match ":SOURCE:" txt) (string-match ":READING_TIME:" txt)))))
+
+(ert-deftest org-clipper-test-format-entry-skips-empty-extra-properties ()
+  (let ((txt (org-clipper--format-entry
+              2 "T" nil
+              (list :url "u" :created "2026-03-28" :body "x"
+                    :properties '(:EMPTY "" :KEEP "v")))))
+    (should-not (string-match-p ":EMPTY:" txt))
+    (should (string-match-p "^:KEEP: v$" txt))))
+
+(ert-deftest org-clipper-test-sanitize-clip-strips-control-chars-from-properties ()
+  (let ((out (org-clipper--sanitize-clip
+              (list :title "t"
+                    :properties (list :K (concat "a" (char-to-string ?\C-@) "b"))))))
+    (should (equal (plist-get (plist-get out :properties) :K) "ab"))))
+
 (ert-deftest org-clipper-test-capture-target-buffer-is-lean-and-reused ()
   (let* ((tmp (make-temp-file "oc-t" nil ".org"))
          (org-clipper-target-file tmp)
@@ -315,3 +340,24 @@
 
 (ert-deftest org-clipper-test-http-max-body-raised ()
   (should (>= org-clipper-http-max-body (* 128 1024 1024))))
+
+;; Hybrid payload: the extension sends standard fields plus a `properties`
+;; object of non-standard template props; the handler must thread it through
+;; so they appear in the drawer.
+(ert-deftest org-clipper-test-http-handle-writes-extra-properties ()
+  (org-clipper-test--with-token
+   (org-clipper-test--with-target
+    (lambda (tmp)
+      (let* ((tok (org-clipper--http-token))
+             (json (json-serialize '(:template "w" :url "https://x" :title "T"
+                                     :body "x" :properties (:READING_TIME "5 min"))))
+             (body (encode-coding-string json 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "X-Org-Clipper-Token: " tok "\r\n"
+                              "Origin: chrome-extension://abc\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n"))
+             (res (org-clipper--http-handle headers body)))
+        (should (= 200 (car res)))
+        (with-temp-buffer
+          (insert-file-contents tmp)
+          (should (string-match-p "^:READING_TIME: 5 min$" (buffer-string)))))))))
