@@ -1,0 +1,5 @@
+org-clipper's browser extension is a fork of Obsidian Web Clipper
+(https://github.com/obsidianmd/obsidian-clipper), MIT © 2024 Obsidian,
+forked at commit 372d420481745f0332a9deae4bea4f0046360b30. Modifications
+© 2026 org-clipper contributors, also MIT. The output layer was changed
+to send clips to Emacs/Org over HTTP.
