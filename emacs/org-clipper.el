@@ -279,17 +279,19 @@ of successfully-written images; failures are skipped."
           (replace-match (concat "[[attachment:" (cdr pair) "]]") t t))))))
 
 (defun org-clipper--sanitize-text (s)
-  "Return string S stripped of NUL and other C0 control characters.
-Web clips occasionally carry stray control bytes (NUL, form-feed, …).
-Once one is written into an Org file, Emacs auto-detects the file as
-*binary* on the next read and loads it UNDECODED -- every multibyte char
-becomes a raw eight-bit byte, which corrupts downstream parsers
-\(vulpea/org-roam) and pops a `select-safe-coding-system' prompt on the
-next save.  TAB, LF and CR are preserved; the rest of the C0 range plus
-DEL is removed.  Non-strings pass through untouched."
+  "Return string S stripped of bytes that force Org to be saved as *raw-text*.
+Web clips occasionally carry stray control bytes (NUL, form-feed, …) or raw
+EIGHT-BIT bytes -- undecodable UTF-8, which Emacs holds as chars
+#x3fff80..#x3fffff.  Either one, once written into an Org file, makes Emacs
+auto-detect the file as *binary* on the next read and load it UNDECODED --
+every multibyte char becomes a raw eight-bit byte, which corrupts downstream
+parsers \(vulpea/org-roam) and pops a `select-safe-coding-system' prompt on
+the next save.  TAB, LF and CR are preserved; the rest of the C0 range, DEL,
+and all eight-bit bytes are removed.  Non-strings pass through untouched."
   (if (stringp s)
       (replace-regexp-in-string
-       (rx (any (?\C-@ . ?\C-h) ?\C-k ?\C-l (?\C-n . ?\C-_) ?\C-?))
+       (rx (any (?\C-@ . ?\C-h) ?\C-k ?\C-l (?\C-n . ?\C-_) ?\C-?
+                (#x3fff80 . #x3fffff)))
        "" s t t)
     s))
 

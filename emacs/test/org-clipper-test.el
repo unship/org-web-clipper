@@ -88,6 +88,15 @@
                     :properties (list :K (concat "a" (char-to-string ?\C-@) "b"))))))
     (should (equal (plist-get (plist-get out :properties) :K) "ab"))))
 
+(ert-deftest org-clipper-test-sanitize-text-strips-eight-bit-bytes ()
+  ;; Raw eight-bit bytes (undecodable UTF-8 -> chars #x3fff80..#x3fffff) are the
+  ;; classic `select-safe-coding-system' (raw-text) trigger; strip them too.
+  (should (equal (org-clipper--sanitize-text (string #x3fff80 ?a #x3fffff ?b)) "ab"))
+  ;; eight-bit + NUL interleaved with real multibyte text, which is preserved.
+  (should (equal (org-clipper--sanitize-text
+                  (concat "你好" (string 0) (string #x3fff85) "世界"))
+                 "你好世界")))
+
 (ert-deftest org-clipper-test-capture-target-buffer-is-lean-and-reused ()
   (let* ((tmp (make-temp-file "oc-t" nil ".org"))
          (org-clipper-target-file tmp)
