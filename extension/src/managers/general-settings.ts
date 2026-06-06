@@ -212,6 +212,7 @@ export function initializeGeneralSettings(): void {
 		}
 
 		updateVaultList();
+		initializeEmacsSettings();
 		initializeShowMoreActionsToggle();
 		initializeBetaFeaturesToggle();
 		initializeLegacyModeToggle();
@@ -238,6 +239,18 @@ export function initializeGeneralSettings(): void {
 	});
 }
 
+function initializeEmacsSettings(): void {
+	const emacsEndpointInput = document.getElementById('emacs-endpoint') as HTMLInputElement;
+	const emacsTokenInput = document.getElementById('emacs-token') as HTMLInputElement;
+	const emacsTemplateInput = document.getElementById('emacs-template') as HTMLInputElement;
+	const emacsDefaultTagsInput = document.getElementById('emacs-default-tags') as HTMLInputElement;
+
+	if (emacsEndpointInput) emacsEndpointInput.value = generalSettings.emacsEndpoint;
+	if (emacsTokenInput) emacsTokenInput.value = generalSettings.emacsToken;
+	if (emacsTemplateInput) emacsTemplateInput.value = generalSettings.emacsTemplate;
+	if (emacsDefaultTagsInput) emacsDefaultTagsInput.value = generalSettings.emacsDefaultTags;
+}
+
 function initializeAutoSave(): void {
 	const generalSettingsForm = document.getElementById('general-settings-form');
 	if (generalSettingsForm) {
@@ -256,6 +269,10 @@ function saveSettingsFromForm(): void {
 	const highlighterToggle = document.getElementById('highlighter-toggle') as HTMLInputElement;
 	const alwaysShowHighlightsToggle = document.getElementById('highlighter-visibility') as HTMLInputElement;
 	const highlightBehaviorSelect = document.getElementById('highlighter-behavior') as HTMLSelectElement;
+	const emacsEndpointInput = document.getElementById('emacs-endpoint') as HTMLInputElement;
+	const emacsTokenInput = document.getElementById('emacs-token') as HTMLInputElement;
+	const emacsTemplateInput = document.getElementById('emacs-template') as HTMLInputElement;
+	const emacsDefaultTagsInput = document.getElementById('emacs-default-tags') as HTMLInputElement;
 
 	const updatedSettings = {
 		...generalSettings, // Keep existing settings
@@ -266,7 +283,11 @@ function saveSettingsFromForm(): void {
 		silentOpen: silentOpenToggle?.checked ?? generalSettings.silentOpen,
 		highlighterEnabled: highlighterToggle?.checked ?? generalSettings.highlighterEnabled,
 		alwaysShowHighlights: alwaysShowHighlightsToggle?.checked ?? generalSettings.alwaysShowHighlights,
-		highlightBehavior: highlightBehaviorSelect?.value ?? generalSettings.highlightBehavior
+		highlightBehavior: highlightBehaviorSelect?.value ?? generalSettings.highlightBehavior,
+		emacsEndpoint: emacsEndpointInput?.value ?? generalSettings.emacsEndpoint,
+		emacsToken: emacsTokenInput?.value ?? generalSettings.emacsToken,
+		emacsTemplate: emacsTemplateInput?.value ?? generalSettings.emacsTemplate,
+		emacsDefaultTags: emacsDefaultTagsInput?.value ?? generalSettings.emacsDefaultTags,
 	};
 
 	saveSettings(updatedSettings);

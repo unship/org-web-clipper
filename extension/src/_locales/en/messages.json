@@ -209,6 +209,36 @@
 	"earlyAccessFeatures": {
 		"message": "Early access features"
 	},
+	"emacsSettings": {
+		"message": "Emacs"
+	},
+	"emacsSettingsDescription": {
+		"message": "Configure the connection to Emacs org-capture via the org-protocol HTTP bridge."
+	},
+	"emacsEndpoint": {
+		"message": "Endpoint"
+	},
+	"emacsEndpointDescription": {
+		"message": "Host and port of the org-clipper HTTP server (e.g. 127.0.0.1:17654)."
+	},
+	"emacsToken": {
+		"message": "Auth token"
+	},
+	"emacsTokenDescription": {
+		"message": "Optional bearer token for the HTTP server."
+	},
+	"emacsTemplate": {
+		"message": "Org-capture template key"
+	},
+	"emacsTemplateDescription": {
+		"message": "Single letter key that selects the org-capture template (e.g. w)."
+	},
+	"emacsDefaultTags": {
+		"message": "Default tags"
+	},
+	"emacsDefaultTagsDescription": {
+		"message": "Comma-separated tags added to every clip when no tags property is set in the template."
+	},
 	"edit": {
 		"message": "Edit"
 	},

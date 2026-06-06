@@ -127,7 +127,49 @@
 									</div>
 								</div>
 							</div>
-							<div class="setting-group">
+							<div class="setting-group" id="emacs-settings-group">
+								<div class="setting-item setting-item-heading"><h3 data-i18n="emacsSettings">Emacs</h3></div>
+								<div class="setting-items">
+									<div class="setting-item-description" data-i18n="emacsSettingsDescription">Configure the connection to Emacs org-capture via the org-protocol HTTP bridge.</div>
+									<div class="setting-item mod-horizontal">
+										<div class="setting-item-info">
+											<label for="emacs-endpoint" data-i18n="emacsEndpoint">Endpoint</label>
+											<div class="setting-item-description" data-i18n="emacsEndpointDescription">Host and port of the org-clipper HTTP server (e.g. 127.0.0.1:17654).</div>
+										</div>
+										<div class="setting-item-control">
+											<input type="text" id="emacs-endpoint" autocomplete="off" spellcheck="false" />
+										</div>
+									</div>
+									<div class="setting-item mod-horizontal">
+										<div class="setting-item-info">
+											<label for="emacs-token" data-i18n="emacsToken">Auth token</label>
+											<div class="setting-item-description" data-i18n="emacsTokenDescription">Optional bearer token for the HTTP server.</div>
+										</div>
+										<div class="setting-item-control">
+											<input type="password" id="emacs-token" autocomplete="off" spellcheck="false" />
+										</div>
+									</div>
+									<div class="setting-item mod-horizontal">
+										<div class="setting-item-info">
+											<label for="emacs-template" data-i18n="emacsTemplate">Org-capture template key</label>
+											<div class="setting-item-description" data-i18n="emacsTemplateDescription">Single letter key that selects the org-capture template (e.g. w).</div>
+										</div>
+										<div class="setting-item-control">
+											<input type="text" id="emacs-template" autocomplete="off" spellcheck="false" maxlength="1" style="width: 3em;" />
+										</div>
+									</div>
+									<div class="setting-item mod-horizontal">
+										<div class="setting-item-info">
+											<label for="emacs-default-tags" data-i18n="emacsDefaultTags">Default tags</label>
+											<div class="setting-item-description" data-i18n="emacsDefaultTagsDescription">Comma-separated tags added to every clip when no tags property is set in the template.</div>
+										</div>
+										<div class="setting-item-control">
+											<input type="text" id="emacs-default-tags" autocomplete="off" spellcheck="false" />
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="setting-group" id="vaults-settings-group" style="display:none;">
 								<div class="setting-item setting-item-heading"><h3 data-i18n="vaults">Vaults</h3></div>
 								<div class="setting-items">
 								<div class="setting-item-description" data-i18n="vaultsDescription">By default, clipped notes are saved to the currently open vault. You can add vaults here if you want the option to save to different vaults. Vault names must exactly match the name of the Obsidian vault. Press <strong>enter</strong> to add a&nbsp;vault.</div>

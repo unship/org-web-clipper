@@ -112,6 +112,12 @@ interface StorageData {
 	history?: HistoryEntry[];
 	ratings?: Rating[];
 	migrationVersion?: number;
+	emacs_settings?: {
+		emacsEndpoint?: string;
+		emacsToken?: string;
+		emacsTemplate?: string;
+		emacsDefaultTags?: string;
+	};
 }
 
 const CURRENT_MIGRATION_VERSION = 1;
@@ -225,10 +231,10 @@ export async function loadSettings(): Promise<Settings> {
 		history: data.history || defaultSettings.history,
 		ratings: data.ratings || defaultSettings.ratings,
 		saveBehavior: data.general_settings?.saveBehavior ?? defaultSettings.saveBehavior,
-		emacsEndpoint: defaultSettings.emacsEndpoint,
-		emacsToken: defaultSettings.emacsToken,
-		emacsTemplate: defaultSettings.emacsTemplate,
-		emacsDefaultTags: defaultSettings.emacsDefaultTags,
+		emacsEndpoint: data.emacs_settings?.emacsEndpoint ?? defaultSettings.emacsEndpoint,
+		emacsToken: data.emacs_settings?.emacsToken ?? defaultSettings.emacsToken,
+		emacsTemplate: data.emacs_settings?.emacsTemplate ?? defaultSettings.emacsTemplate,
+		emacsDefaultTags: data.emacs_settings?.emacsDefaultTags ?? defaultSettings.emacsDefaultTags,
 	};
 
 	generalSettings = loadedSettings;
@@ -282,7 +288,13 @@ export async function saveSettings(settings?: Partial<Settings>): Promise<void> 
 			highlightActiveLine: generalSettings.readerSettings.highlightActiveLine,
 			customCss: generalSettings.readerSettings.customCss
 		},
-		stats: generalSettings.stats
+		stats: generalSettings.stats,
+		emacs_settings: {
+			emacsEndpoint: generalSettings.emacsEndpoint,
+			emacsToken: generalSettings.emacsToken,
+			emacsTemplate: generalSettings.emacsTemplate,
+			emacsDefaultTags: generalSettings.emacsDefaultTags,
+		},
 	});
 }
 

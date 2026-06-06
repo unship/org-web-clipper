@@ -378,7 +378,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 			try {
 				// DOM-dependent initializations
-				updateVaultDropdown(loadedSettings.vaults);
+				// Vault picker not shown — clips go to Emacs
 				populateTemplateDropdown();
 				setupEventListeners(currentTabId);
 				await initializeUI();
