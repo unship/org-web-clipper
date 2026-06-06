@@ -49,6 +49,10 @@ export const generalSettings: Settings = {
 	history: [],
 	ratings: [],
 	saveBehavior: 'addToObsidian',
+	emacsEndpoint: '127.0.0.1:17654',
+	emacsToken: '',
+	emacsTemplate: 'w',
+	emacsDefaultTags: '',
 };
 
 export const loadSettings = async () => {};

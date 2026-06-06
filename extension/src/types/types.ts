@@ -97,6 +97,10 @@ export interface Settings {
 	history: HistoryEntry[];
 	ratings: Rating[];
 	saveBehavior: 'addToObsidian' | 'saveFile' | 'copyToClipboard';
+	emacsEndpoint: string;
+	emacsToken: string;
+	emacsTemplate: string;
+	emacsDefaultTags: string;
 }
 
 export interface ModelConfig {

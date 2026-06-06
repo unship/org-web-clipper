@@ -47,7 +47,11 @@ export let generalSettings: Settings = {
 	},
 	history: [],
 	ratings: [],
-	saveBehavior: 'addToObsidian'
+	saveBehavior: 'addToObsidian',
+	emacsEndpoint: '127.0.0.1:17654',
+	emacsToken: '',
+	emacsTemplate: 'w',
+	emacsDefaultTags: ''
 };
 
 export function setLocalStorage(key: string, value: any): Promise<void> {
@@ -159,6 +163,10 @@ export async function loadSettings(): Promise<Settings> {
 		},
 		history: [],
 		ratings: [],
+		emacsEndpoint: '127.0.0.1:17654',
+		emacsToken: '',
+		emacsTemplate: 'w',
+		emacsDefaultTags: '',
 	};
 
 	// Update migration version if needed
@@ -216,7 +224,11 @@ export async function loadSettings(): Promise<Settings> {
 		stats: data.stats || defaultSettings.stats,
 		history: data.history || defaultSettings.history,
 		ratings: data.ratings || defaultSettings.ratings,
-		saveBehavior: data.general_settings?.saveBehavior ?? defaultSettings.saveBehavior
+		saveBehavior: data.general_settings?.saveBehavior ?? defaultSettings.saveBehavior,
+		emacsEndpoint: defaultSettings.emacsEndpoint,
+		emacsToken: defaultSettings.emacsToken,
+		emacsTemplate: defaultSettings.emacsTemplate,
+		emacsDefaultTags: defaultSettings.emacsDefaultTags,
 	};
 
 	generalSettings = loadedSettings;
