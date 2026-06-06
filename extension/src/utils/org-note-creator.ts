@@ -4,19 +4,9 @@ import { mdToOrg } from './md-to-org';
 const orgKey = (name: string): string =>
   name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
-/** Render compiled template properties as an Org :PROPERTIES: drawer. */
-export function propertiesToOrgDrawer(properties: Property[]): string {
-  const lines: string[] = [];
-  for (const prop of properties) {
-    const value = (prop.value ?? '').toString().trim();
-    if (!value) continue;
-    const key = orgKey(prop.name);
-    if (!key) continue;
-    lines.push(`:${key}: ${value.replace(/\n+/g, ' ')}`);
-  }
-  if (lines.length === 0) return '';
-  return `:PROPERTIES:\n${lines.join('\n')}\n:END:`;
-}
+// Property names (lowercased) that map to standard clip fields rather than the
+// extra :PROPERTIES: drawer. The Emacs side knows these and assembles them.
+const STANDARD = new Set(['author', 'published', 'date', 'created', 'description', 'tags', 'title', 'url', 'source']);
 
 export interface EmacsClip {
   properties: Property[];
@@ -26,29 +16,73 @@ export interface EmacsClip {
   url: string;
   tags: string[];
 }
-export interface EmacsTransport { endpoint: string; token: string; template?: string; }
 
-export function renderOrgSubtree(clip: EmacsClip): string {
-  const heading = `* ${clip.noteName}`.trimEnd();
-  const drawer = propertiesToOrgDrawer(clip.properties);
-  const body = mdToOrg(clip.body || '').trimEnd();
-  return [heading, drawer, body].filter(Boolean).join('\n');
+export interface EmacsTransport {
+  endpoint: string;
+  token: string;
+  template?: string;
+}
+
+export interface CapturePayload {
+  template: string;
+  title: string;
+  body: string; // Org (converted from Markdown)
+  author: string;
+  published: string;
+  description: string;
+  created: string;
+  url: string;
+  tags: string[];
+  behavior: Template['behavior'];
+  properties: Record<string, string>; // non-standard props -> Org drawer (Emacs writes them)
+}
+
+/** Split the template's properties into the standard fields org-clipper--insert-clip
+ *  knows plus an extra-properties map, and convert the body to Org. */
+export function buildCapturePayload(clip: EmacsClip, template: string): CapturePayload {
+  const get = (n: string): string =>
+    (clip.properties.find(p => p.name.trim().toLowerCase() === n)?.value ?? '').toString().trim();
+  const extra: Record<string, string> = {};
+  for (const prop of clip.properties) {
+    if (STANDARD.has(prop.name.trim().toLowerCase())) continue;
+    const val = (prop.value ?? '').toString().trim();
+    if (!val) continue;
+    const key = orgKey(prop.name);
+    if (key) extra[key] = val.replace(/\n+/g, ' ');
+  }
+  return {
+    template,
+    title: clip.noteName,
+    body: mdToOrg(clip.body || '').trimEnd(),
+    author: get('author'),
+    published: get('published') || get('date'),
+    description: get('description'),
+    created: get('created'),
+    url: clip.url,
+    tags: clip.tags,
+    behavior: clip.behavior,
+    properties: extra,
+  };
 }
 
 export async function saveToEmacs(clip: EmacsClip, cfg: EmacsTransport): Promise<{ ok: true; bytes: number }> {
   const endpoint = (cfg.endpoint || '127.0.0.1:17654').replace(/^https?:\/\//, '');
   const url = `http://${endpoint}/capture`;
-  const payload = { title: clip.noteName, content: renderOrgSubtree(clip), template: cfg.template || '', behavior: clip.behavior, url: clip.url, tags: clip.tags };
+  const payload = buildCapturePayload(clip, cfg.template || '');
   let resp: Response;
   try {
-    resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Org-Clipper-Token': cfg.token || '' }, body: JSON.stringify(payload) });
-  } catch (e: unknown) {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Org-Clipper-Token': cfg.token || '' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`cannot reach Emacs at ${url} — is the daemon running and 'M-x org-clipper-start' done? (${msg})`);
   }
   if (!resp.ok) {
     let detail = '';
-    try { detail = (await resp.json() as { error?: string })?.error || ''; } catch { /* ignore */ }
+    try { detail = ((await resp.json()) as { error?: string })?.error || ''; } catch { /* ignore */ }
     throw new Error(`Emacs returned HTTP ${resp.status}${detail ? ': ' + detail : ''}`);
   }
   return { ok: true, bytes: new TextEncoder().encode(JSON.stringify(payload)).length };
