@@ -611,7 +611,9 @@ function showError(messageKey: string): void {
 	const clipper = document.querySelector('.clipper') as HTMLElement;
 
 	if (errorMessage && clipper) {
-		errorMessage.textContent = getMessage(messageKey);
+		// Fall back to the raw string when it isn't a known locale key, so dynamic
+		// errors (e.g. "cannot reach Emacs …") surface instead of a blank/generic message.
+		errorMessage.textContent = getMessage(messageKey) || messageKey;
 		errorMessage.style.display = 'flex';
 		clipper.style.display = 'none';
 
@@ -1364,9 +1366,8 @@ async function handleClipObsidian(): Promise<void> {
 			setTimeout(() => window.close(), 500);
 		}
 	} catch (error) {
-		console.error('Error in handleClipObsidian:', error);
-		showError('failedToSaveFile');
-		throw error;
+		console.error('Error saving clip to Emacs:', error);
+		showError(error instanceof Error ? error.message : 'failedToSaveFile');
 	}
 }
 

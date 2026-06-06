@@ -25,17 +25,17 @@ interface CliArgs {
 
 function printUsage(): void {
 	const usage = `
-Usage: obsidian-clipper <url> [options]
+Usage: org-clipper <url> [options]
 
 Options:
   -t, --template <path>        Path to template JSON file or directory (required)
                                If a directory, auto-matches template by URL triggers
   -o, --output <path>          Output .md file path (default: stdout)
       --html <path>            Read HTML from file instead of fetching URL (use - for stdin)
-      --vault <name>           Obsidian vault name
-      --open                   Send to Obsidian instead of writing file
-      --uri                    Use URI scheme instead of Obsidian CLI
-      --silent                 Suppress Obsidian focus (URI mode)
+      --vault <name>           Vault/target name (legacy, kept for compatibility)
+      --open                   Send to Emacs instead of writing file
+      --uri                    Use URI scheme instead of Emacs CLI (legacy)
+      --silent                 Suppress Emacs focus (URI mode, legacy)
       --property-types <path>  JSON mapping property names to types
   -h, --help                   Show this help message
 `.trim();
