@@ -1,10 +1,10 @@
 {
 	"manifest_version": 3,
 	"default_locale": "en",
-	"name": "Obsidian Web Clipper",
-	"homepage_url": "https://obsidian.md/",
+	"name": "org-clipper",
+	"homepage_url": "https://github.com/ed/org-clipper",
 	"version": "1.6.3",
-	"description": "Save and highlight web pages in a private and durable format that you can access offline. The official extension for Obsidian.",
+	"description": "Clip web pages to Emacs Org-mode (Defuddle extraction), sent over local HTTP.",
 	"permissions": [
 		"activeTab",
 		"clipboardWrite",

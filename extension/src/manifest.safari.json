@@ -1,9 +1,9 @@
 {
 	"manifest_version": 3,
-	"name": "Obsidian Web Clipper",
-	"homepage_url": "https://obsidian.md/",
+	"name": "org-clipper",
+	"homepage_url": "https://github.com/ed/org-clipper",
 	"version": "1.6.3",
-	"description": "Save content from the web to Obsidian, in a private and durable format you can always access offline.",
+	"description": "Clip web pages to Emacs Org-mode (Defuddle extraction), sent over local HTTP.",
 	"permissions": [
 		"activeTab",
 		"clipboardWrite",
