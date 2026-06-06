@@ -176,6 +176,24 @@ docs/
 GOAL.md                      progress / development log
 ```
 
+## Browser extension
+
+The browser extension is a fork of
+[Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper)
+(MIT © 2024 Obsidian), forked at commit
+`372d420481745f0332a9deae4bea4f0046360b30`. The output layer was
+replaced to send clips to Emacs/Org over local HTTP instead of to
+Obsidian. Build and load it as follows:
+
+```sh
+cd extension && npm install   # first time only
+npm run build:chrome          # output → extension/dist/
+```
+
+Then in Chrome: open `chrome://extensions`, enable **Developer mode**,
+click **Load unpacked**, and select `extension/dist`. In Emacs, start
+the HTTP receiver with `M-x org-clipper-start` before clipping.
+
 ## Install
 
 You need two things: the Chrome extension, and Emacs set up (once) as
