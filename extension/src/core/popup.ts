@@ -1,7 +1,8 @@
 import dayjs from 'dayjs';
 import { Template, Property, PromptVariable } from '../types/types';
 import { incrementStat, addHistoryEntry, getClipHistory } from '../utils/storage-utils';
-import { generateFrontmatter, saveToObsidian } from '../utils/obsidian-note-creator';
+import { generateFrontmatter } from '../utils/obsidian-note-creator';
+import { saveToEmacs } from '../utils/org-note-creator';
 import { extractPageContent, initializePageContent } from '../utils/content-extractor';
 import { compileTemplate } from '../utils/template-compiler';
 import { initializeIcons, getPropertyTypeIcon } from '../icons/icons';
@@ -1336,21 +1337,27 @@ async function handleClipObsidian(): Promise<void> {
 
 		// Gather content
 		const properties = getPropertiesFromDOM();
-
-		const frontmatter = await generateFrontmatter(properties);
-		const fileContent = frontmatter + noteContentField.value;
-
-		// Save to Obsidian
-		const selectedVault = vaultDropdown.value || currentTemplate.vault || '';
-		const isDailyNote = currentTemplate.behavior === 'append-daily' || currentTemplate.behavior === 'prepend-daily';
-		const noteName = isDailyNote ? '' : noteNameField?.value || '';
-		const path = isDailyNote ? '' : pathField?.value || '';
-
-		await saveToObsidian(fileContent, noteName, path, selectedVault, currentTemplate.behavior);
+		const noteName = noteNameField?.value || '';
 		const tabInfo = await getCurrentTabInfo();
-		await incrementStat('addToObsidian', selectedVault, path, tabInfo.url, tabInfo.title);
+		const tagsProp = properties.find(p => p.name === 'tags')?.value || generalSettings.emacsDefaultTags || '';
+		await saveToEmacs(
+			{
+				properties,
+				body: noteContentField.value,
+				noteName,
+				behavior: currentTemplate.behavior,
+				url: tabInfo.url || '',
+				tags: tagsProp.split(',').map(t => t.trim()).filter(Boolean),
+			},
+			{
+				endpoint: generalSettings.emacsEndpoint,
+				token: generalSettings.emacsToken,
+				template: generalSettings.emacsTemplate,
+			},
+		);
+		await incrementStat('addToObsidian', 'emacs', '', tabInfo.url, tabInfo.title);
 
-		lastSelectedVault = selectedVault;
+		lastSelectedVault = '';
 		await setLocalStorage('lastSelectedVault', lastSelectedVault);
 
 		if (!isSidePanel) {
