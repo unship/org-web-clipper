@@ -50,15 +50,29 @@ a { color: #2e4a36; }
 `;
 
   let savedOverflow = null;
+  let opening = false;
 
-  function extractArticle() {
+  async function extractArticle() {
+    const DomPrep = self.OrgClipperDomPrep;
+    DomPrep?.installTrustedTypesPassthrough();
     const clone = document.cloneNode(true);
+    // Best-effort clone enrichment — wrapped so a failure (e.g. Trusted Types)
+    // can never break reading mode, only skip the nicety.
+    try { DomPrep?.inlineShadowRoots(document, clone); }
+    catch (e) { console.debug("[org-clipper] shadow inline skipped:", e); }
     clone.getElementById(READER_ID)?.remove();
     Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
-    self.OrgClipperDomPrep?.prepCloneForExtract(clone);
-    const r = new self.Defuddle(clone, {
+    try { DomPrep?.resolveUrls(clone, location.href); }
+    catch (e) { console.debug("[org-clipper] url resolve skipped:", e); }
+    DomPrep?.prepCloneForExtract(clone);
+    const instance = new self.Defuddle(clone, {
       url: location.href, standardize: true, removeImages: false,
-    }).parse();
+    });
+    // parseAsync() so reading mode also shows network-extracted content (e.g. the
+    // YouTube transcript), matching the clip path. Falls back to sync parse().
+    const r = DomPrep
+      ? await DomPrep.parseAsyncWithFallback(instance)
+      : instance.parse();
     return { html: r.content || "", title: r.title || document.title || "" };
   }
 
@@ -86,15 +100,19 @@ a { color: #2e4a36; }
     });
   }
 
-  function open() {
-    if (document.getElementById(READER_ID)) return;
+  async function open() {
+    if (document.getElementById(READER_ID) || opening) return;
+    opening = true;
     let article;
     try {
-      article = extractArticle();
+      article = await extractArticle();
     } catch (e) {
       console.error("org-clipper reader:", e);
       return;
+    } finally {
+      opening = false;
     }
+    if (document.getElementById(READER_ID)) return; // closed/reopened mid-extraction
     const iframe = document.createElement("iframe");
     iframe.id = READER_ID;
     iframe.setAttribute(

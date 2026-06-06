@@ -9,7 +9,7 @@
 // This file's trailing expression becomes the InjectionResult.result, with the
 // promise (if any) awaited by Chrome when world is ISOLATED.
 
-(() => {
+(async () => {
   const Defuddle = self.Defuddle;
   if (typeof Defuddle !== "function") {
     throw new Error("org-clipper: Defuddle constructor not found on page context");
@@ -35,29 +35,72 @@
     return ORIG_ERROR.apply(console, args);
   };
 
+  const DomPrep = self.OrgClipperDomPrep;
+  // On Trusted-Types pages (e.g. YouTube) Defuddle's own innerHTML use throws
+  // without this — install a permissive policy in our world before parsing.
+  DomPrep?.installTrustedTypesPassthrough();
   let r;
   try {
     // Parse a DETACHED CLONE so extraction can never mutate the live page.
     // (Defuddle reads the live doc for shadow-roots/media-queries; cloning makes
-    // even those reads operate on a throwaway copy.) Strip our own reading-mode
-    // overlay from the clone so it is never treated as content.
+    // even those reads operate on a throwaway copy.)
     const clone = document.cloneNode(true);
+    // Best-effort clone enrichment — these touch arbitrary page DOM and can hit
+    // engine restrictions (e.g. Trusted Types on YouTube), so each is wrapped:
+    // a failure must never break the clip, only skip the nicety.
+    // cloneNode drops shadow roots — copy open shadow-DOM content into the clone
+    // first, while it is still structurally identical to the live tree.
+    try { DomPrep?.inlineShadowRoots(document, clone); }
+    catch (e) { console.debug("[org-clipper] shadow inline skipped:", e); }
+    // Strip our own reading-mode overlay so it is never treated as content.
     clone.getElementById("org-clipper-reader")?.remove();
     Object.defineProperty(clone, "URL", { value: location.href, configurable: true });
-    self.OrgClipperDomPrep?.prepCloneForExtract(clone);
+    // Absolutise relative src/href/srcset so links and images survive out of page.
+    try { DomPrep?.resolveUrls(clone, location.href); }
+    catch (e) { console.debug("[org-clipper] url resolve skipped:", e); }
+    DomPrep?.prepCloneForExtract(clone);
     const instance = new Defuddle(clone, {
       markdown: true,
       url: location.href,
       standardize: true,
       removeImages: false,
     });
-    r = instance.parse();
+    // parseAsync() (raced against a timeout, sync parse() fallback) honours site
+    // extractors that fetch over the network — most importantly YouTube, whose
+    // transcript/captions come from YoutubeExtractor.extractAsync(). The sync
+    // parse() only reads an already-open transcript panel, so a normal clip never
+    // captured captions. This file runs in the ISOLATED world, where Chrome awaits
+    // a Promise returned as the InjectionResult.result.
+    r = DomPrep
+      ? await DomPrep.parseAsyncWithFallback(instance)
+      : instance.parse();
   } finally {
     console.error = ORIG_ERROR;
   }
 
-  const selection =
-    (typeof window.getSelection === "function" && window.getSelection().toString()) || "";
+  // Selection capture. Take the selected range as HTML so links, emphasis and
+  // images survive, then convert it to markdown with the very same engine Defuddle
+  // uses (createMarkdownContent). `selection` keeps the plain-text form as a
+  // fallback for when there is no rich content or the converter is unavailable.
+  let selection = "";
+  let selectionMarkdown = "";
+  try {
+    const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+    selection = (sel && sel.toString()) || "";
+    if (sel && sel.rangeCount > 0 && selection.trim()) {
+      const holder = document.createElement("div");
+      for (let i = 0; i < sel.rangeCount; i++) {
+        holder.appendChild(sel.getRangeAt(i).cloneContents());
+      }
+      DomPrep?.resolveUrls(holder, location.href);
+      selectionMarkdown =
+        typeof Defuddle.createMarkdownContent === "function"
+          ? Defuddle.createMarkdownContent(holder.innerHTML, location.href)
+          : selection;
+    }
+  } catch (e) {
+    console.debug("[org-clipper] selection capture failed:", e);
+  }
 
   return {
     url: location.href,
@@ -74,6 +117,7 @@
     extractorType: r.extractorType || null,
     markdown: r.content || "",
     selection,
+    selectionMarkdown,
     capturedAt: new Date().toISOString(),
   };
 })();

@@ -39,8 +39,13 @@ async function extractFromTab(tabId) {
 }
 
 function bodyFromExtract(extract, { selectionOnly } = {}) {
-  if (selectionOnly && extract.selection && extract.selection.trim()) {
-    return `#+BEGIN_QUOTE\n${extract.selection.trim()}\n#+END_QUOTE\n`;
+  if (selectionOnly) {
+    // Prefer the rich selection (HTML captured page-side, converted to markdown);
+    // run it through the same md→Org pass as the body. Fall back to plain text.
+    const md = (extract.selectionMarkdown || "").trim();
+    if (md) return `#+BEGIN_QUOTE\n${mdToOrg(md)}\n#+END_QUOTE\n`;
+    const txt = (extract.selection || "").trim();
+    if (txt) return `#+BEGIN_QUOTE\n${txt}\n#+END_QUOTE\n`;
   }
   return mdToOrg(extract.markdown || "");
 }
