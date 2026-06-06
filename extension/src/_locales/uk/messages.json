@@ -17,8 +17,8 @@
 	"addProviderTitle": {
 		"message": "Додати провайдера"
 	},
-	"addToObsidian": {
-		"message": "Додати в Obsidian"
+	"addToEmacs": {
+		"message": "Додати в Emacs"
 	},
 	"addVaultPlaceholder": {
 		"message": "Натисніть Enter, щоб додати сховище"
@@ -45,7 +45,7 @@
 		"message": "Відсутній API-ключ"
 	},
 	"apiKeysWarning": {
-		"message": "Використовуючи зовнішнього провайдера, ви погоджуєтесь з їхніми умовами використання та політикою конфіденційності. Запити інтерпретатора надсилаються безпосередньо вибраному вами провайдеру. Obsidian не збирає та не зберігає інформацію про ваші запити."
+		"message": "Використовуючи зовнішнього провайдера, ви погоджуєтесь з їхніми умовами використання та політикою конфіденційності. Запити інтерпретатора надсилаються безпосередньо вибраному вами провайдеру. Emacs не збирає та не зберігає інформацію про ваші запити."
 	},
 	"appendToDaily": {
 		"message": "Додати до щоденної нотатки, в кінець"
@@ -96,7 +96,7 @@
 		"message": "Поведінка вирізання"
 	},
 	"clipBehaviorDescription": {
-		"message": "Виберіть, як зберігати вибраний вміст в Obsidian. Встановлює змінну $strong_start${{content}}$strong_end$",
+		"message": "Виберіть, як зберігати вибраний вміст в Emacs. Встановлює змінну $strong_start${{content}}$strong_end$",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -107,7 +107,7 @@
 		}
 	},
 	"clipboardError": {
-		"message": "Obsidian не може отримати доступ до вашого буфера обміну. Спробуйте інструкції з усунення несправностей тут: $1",
+		"message": "Emacs не може отримати доступ до вашого буфера обміну. Спробуйте інструкції з усунення несправностей тут: $1",
 		"placeholders": {
 			"1": {
 				"content": "$1"
@@ -118,7 +118,7 @@
 		"message": "Закрити"
 	},
 	"commandOpenClipper": {
-		"message": "Відкрити Obsidian Clipper"
+		"message": "Відкрити Emacs Clipper"
 	},
 	"commandQuickClip": {
 		"message": "Швидке вирізання"
@@ -196,13 +196,13 @@
 		"message": "Дублювати"
 	},
 	"earlyAccessDescription": {
-		"message": "Використовувати функції, які потребують найновішої $link_start$версії раннього доступу$link_end$ Obsidian. Наразі потрібен Obsidian 1.7.2 або новіший.",
+		"message": "Використовувати функції, які потребують найновішої $link_start$версії раннього доступу$link_end$ Emacs. Наразі потрібен Emacs 1.7.2 або новіший.",
 		"placeholders": {
 			"link_end": {
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/Obsidian/Early+access+versions\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -225,7 +225,7 @@
 		"message": "Вбудований"
 	},
 	"enableHighlighterDescription": {
-		"message": "Виділяйте вміст на веб-сторінках для збереження в Obsidian"
+		"message": "Виділяйте вміст на веб-сторінках для збереження в Emacs"
 	},
 	"enableInterpreter": {
 		"message": "Увімкнути інтерпретатор"
@@ -237,7 +237,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/interpreter\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			},
 			"strong_end": {
 				"content": "</strong>"
@@ -272,7 +272,7 @@
 		"message": "Експортувати властивості"
 	},
 	"exportPropertiesDescription": {
-		"message": "Зберегти властивості Web Clipper у файл $strong_start$types.json$strong_end$, який можна імпортувати у ваше сховище Obsidian або Web Clipper на інших пристроях",
+		"message": "Зберегти властивості Web Clipper у файл $strong_start$types.json$strong_end$, який можна імпортувати у ваше сховище Emacs або Web Clipper на інших пристроях",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -283,10 +283,10 @@
 		}
 	},
 	"extensionDescription": {
-		"message": "Зберігайте веб-вміст у приватному та довговічному форматі, доступному офлайн. Офіційне браузерне розширення для Obsidian."
+		"message": "Зберігайте веб-вміст у приватному та довговічному форматі, доступному офлайн. Офіційне браузерне розширення для Emacs."
 	},
 	"extensionName": {
-		"message": "Obsidian Web Clipper"
+		"message": "org-clipper"
 	},
 	"failedToCopyText": {
 		"message": "Не вдалося скопіювати текст"
@@ -409,7 +409,7 @@
 		"message": "Імпортувати властивості"
 	},
 	"importPropertiesDescription": {
-		"message": "Щоб імпортувати властивості з Obsidian, знайдіть файл $strong_1_start$types.json$strong_1_end$ у папці $strong_2_start$.obsidian$strong_2_end$ вашого сховища. Ця папка за замовчуванням прихована в більшості операційних систем.",
+		"message": "Щоб імпортувати властивості з Emacs, знайдіть файл $strong_1_start$types.json$strong_1_end$ у папці $strong_2_start$.emacs.d$strong_2_end$ вашого сховища. Ця папка за замовчуванням прихована в більшості операційних систем.",
 		"placeholders": {
 			"strong_1_end": {
 				"content": "</strong>"
@@ -467,7 +467,7 @@
 		"message": "Застарілий режим"
 	},
 	"legacyModeDescription": {
-		"message": "Використовує метод захоплення URI, сумісний з Obsidian 1.6.7 та старішими версіями. Зауважте, що довжина захопленого вмісту обмежена браузером та операційною системою. Деякі сторінки можуть не вдатися без повідомлення про помилку."
+		"message": "Використовує метод захоплення URI, сумісний з Emacs 1.6.7 та старішими версіями. Зауважте, що довжина захопленого вмісту обмежена браузером та операційною системою. Деякі сторінки можуть не вдатися без повідомлення про помилку."
 	},
 	"loadArticle": {
 		"message": "Читати статтю"
@@ -950,7 +950,7 @@
 		"message": "Зберігати нотатки без відкриття"
 	},
 	"silentOpenDescription": {
-		"message": "Вирізані нотатки будуть збережені, але не відкриті в новій вкладці. Obsidian все одно буде виведений на передній план."
+		"message": "Вирізані нотатки будуть збережені, але не відкриті в новій вкладці. Emacs все одно буде виведений на передній план."
 	},
 	"sort": {
 		"message": "Сортувати"
@@ -1045,7 +1045,7 @@
 		"message": "Сховища"
 	},
 	"vaultsDescription": {
-		"message": "За замовчуванням вирізані нотатки зберігаються у відкритому сховищі. Ви можете додати сховища тут, якщо хочете мати можливість зберігати в різних сховищах. Назва сховища повинна точно відповідати назві сховища Obsidian. Натисніть $strong_start$enter$strong_end$ щоб додати сховище.",
+		"message": "За замовчуванням вирізані нотатки зберігаються у відкритому сховищі. Ви можете додати сховища тут, якщо хочете мати можливість зберігати в різних сховищах. Назва сховища повинна точно відповідати назві сховища Emacs. Натисніть $strong_start$enter$strong_end$ щоб додати сховище.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"

@@ -18,7 +18,7 @@
 		"message": "Add provider"
 	},
 	"addToObsidian": {
-		"message": "Add to Obsidian"
+		"message": "Add to Emacs"
 	},
 	"addVaultPlaceholder": {
 		"message": "Press enter to add a vault"
@@ -45,7 +45,7 @@
 		"message": "No API key"
 	},
 	"apiKeysWarning": {
-		"message": "By using an external provider you agree to their terms and privacy policy. Interpreter requests are sent directly to the provider you choose. Obsidian does not gather or store any data about your requests."
+		"message": "By using an external provider you agree to their terms and privacy policy. Interpreter requests are sent directly to the provider you choose. org-clipper does not gather or store any data about your requests."
 	},
 	"appendToDaily": {
 		"message": "Add to daily note, at the bottom"
@@ -96,7 +96,7 @@
 		"message": "Clip behavior"
 	},
 	"clipBehaviorDescription": {
-		"message": "Choose how highlighted content is saved to Obsidian. Defines the $strong_start${{content}}$strong_end$ variable.",
+		"message": "Choose how highlighted content is saved to Emacs. Defines the $strong_start${{content}}$strong_end$ variable.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -107,7 +107,7 @@
 		}
 	},
 	"clipboardError": {
-		"message": "Obsidian is not able to access your clipboard. Try the troubleshooting instructions here: $1",
+		"message": "Emacs is not able to access your clipboard. Try the troubleshooting instructions here: $1",
 		"placeholders": {
 			"1": {
 				"content": "$1"
@@ -118,7 +118,7 @@
 		"message": "Close"
 	},
 	"commandOpenClipper": {
-		"message": "Open Obsidian Clipper"
+		"message": "Open org-clipper"
 	},
 	"commandQuickClip": {
 		"message": "Quick clip"
@@ -196,15 +196,7 @@
 		"message": "Duplicate"
 	},
 	"earlyAccessDescription": {
-		"message": "Use features that require the latest $link_start$early access version$link_end$ of Obsidian. Currently requires Obsidian 1.7.2 or later.",
-		"placeholders": {
-			"link_end": {
-				"content": "</a>"
-			},
-			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/Obsidian/Early+access+versions\" target=\"_blank\">"
-			}
-		}
+		"message": "Use the latest features."
 	},
 	"earlyAccessFeatures": {
 		"message": "Early access features"
@@ -255,7 +247,7 @@
 		"message": "Embedded"
 	},
 	"enableHighlighterDescription": {
-		"message": "Highlight content on web pages that you can save to Obsidian."
+		"message": "Highlight content on web pages that you can save to Emacs."
 	},
 	"enableInterpreter": {
 		"message": "Enable interpreter"
@@ -267,7 +259,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/interpreter\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			},
 			"strong_end": {
 				"content": "</strong>"
@@ -302,7 +294,7 @@
 		"message": "Export properties"
 	},
 	"exportPropertiesDescription": {
-		"message": "Save Web Clipper properties to a $strong_start$types.json$strong_end$ file that can be imported into your Obsidian vault, or into Web Clipper on other devices.",
+		"message": "Save org-clipper properties to a $strong_start$types.json$strong_end$ file that can be imported into your Org setup, or into org-clipper on other devices.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -313,10 +305,10 @@
 		}
 	},
 	"extensionDescription": {
-		"message": "Save content from the web in a private and durable format that you can access offline. The official browser extension for Obsidian."
+		"message": "Clip web pages to Emacs Org-mode in a private, durable format you can access offline."
 	},
 	"extensionName": {
-		"message": "Obsidian Web Clipper"
+		"message": "org-clipper"
 	},
 	"failedToCopyText": {
 		"message": "Failed to copy text"
@@ -439,7 +431,7 @@
 		"message": "Import properties"
 	},
 	"importPropertiesDescription": {
-		"message": "To import your properties from Obsidian, locate the $strong_1_start$types.json$strong_1_end$ file in the $strong_2_start$.obsidian$strong_2_end$ folder within your vault. Note this folder is hidden by default on most operating systems.",
+		"message": "To import your properties, locate the $strong_1_start$types.json$strong_1_end$ file in your Org setup. Note this folder is hidden by default on most operating systems.",
 		"placeholders": {
 			"strong_1_end": {
 				"content": "</strong>"
@@ -497,7 +489,7 @@
 		"message": "Legacy mode"
 	},
 	"legacyModeDescription": {
-		"message": "Uses the URI clipping method compatible with Obsidian 1.6.7 or earlier. Note that the length of the content you can clip is limited by your browser and OS. Some pages may fail without any errors."
+		"message": "Legacy URI clipping method. Note that the length of the content you can clip is limited by your browser and OS. Some pages may fail without any errors."
 	},
 	"loadArticle": {
 		"message": "Read article"
@@ -572,7 +564,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/variables\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -988,7 +980,7 @@
 		"message": "Save clipped note without opening it"
 	},
 	"silentOpenDescription": {
-		"message": "Clipped notes will be saved but will not open as a new tab. Obsidian will still be brought to the foreground."
+		"message": "Clips will be saved without opening a new tab. Emacs will still be brought to the foreground."
 	},
 	"sort": {
 		"message": "Sort"
@@ -1083,7 +1075,7 @@
 		"message": "Vaults"
 	},
 	"vaultsDescription": {
-		"message": "By default, clipped notes are saved to the currently open vault. You can add vaults here if you want the option to save to different vaults. Vault names must exactly match the name of the Obsidian vault. Press $strong_start$enter$strong_end$ to add a vault.",
+		"message": "By default, clipped notes are saved to the currently open vault. You can add vaults here if you want the option to save to different vaults. Vault names must exactly match the name of the vault in your Org setup. Press $strong_start$enter$strong_end$ to add a vault.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"

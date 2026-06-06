@@ -17,8 +17,8 @@
 	"addProviderTitle": {
 		"message": "Provider jodein"
 	},
-	"addToObsidian": {
-		"message": "Obsidian me save karein"
+	"addToEmacs": {
+		"message": "Emacs me save karein"
 	},
 	"addVaultPlaceholder": {
 		"message": "Vault jodne ke liye enter dabaein"
@@ -96,7 +96,7 @@
 		"message": "Save karne ka tarika"
 	},
 	"clipBehaviorDescription": {
-		"message": "Chunein ki highlight ki gayi samagri ko Obsidian mein kaise save kiya jaye. $strong_start${{content}}$strong_end$ variable ko define karta hai.",
+		"message": "Chunein ki highlight ki gayi samagri ko Emacs mein kaise save kiya jaye. $strong_start${{content}}$strong_end$ variable ko define karta hai.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -107,7 +107,7 @@
 		}
 	},
 	"clipboardError": {
-		"message": "Obsidian आपके क्लिपबोर्ड तक पहुँच नहीं पा रहा है। यहाँ दिए गए समस्या-निवारण निर्देश आज़माएँ: $1",
+		"message": "Emacs आपके क्लिपबोर्ड तक पहुँच नहीं पा रहा है। यहाँ दिए गए समस्या-निवारण निर्देश आज़माएँ: $1",
 		"placeholders": {
 			"1": {
 				"content": "$1"
@@ -118,7 +118,7 @@
 		"message": "Band karein"
 	},
 	"commandOpenClipper": {
-		"message": "Obsidian Clipper kholein"
+		"message": "Emacs Clipper kholein"
 	},
 	"commandQuickClip": {
 		"message": "Quick clip"
@@ -196,13 +196,13 @@
 		"message": "Duplicate"
 	},
 	"earlyAccessDescription": {
-		"message": "Obsidian ke latest $link_start$early access version$link_end$ ki zarurat wali features ka upyog karein. Vartaman mein Obsidian 1.7.2 ya usse naya chahiye.",
+		"message": "Emacs ke latest $link_start$early access version$link_end$ ki zarurat wali features ka upyog karein. Vartaman mein Emacs 1.7.2 ya usse naya chahiye.",
 		"placeholders": {
 			"link_end": {
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/Obsidian/Early+access+versions\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -225,7 +225,7 @@
 		"message": "सम्मिलित"
 	},
 	"enableHighlighterDescription": {
-		"message": "Web page par content highlight karein jise aap Obsidian mein save kar sakte hain."
+		"message": "Web page par content highlight karein jise aap Emacs mein save kar sakte hain."
 	},
 	"enableInterpreter": {
 		"message": "Interpreter enable karein"
@@ -237,7 +237,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/interpreter\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			},
 			"strong_end": {
 				"content": "</strong>"
@@ -272,7 +272,7 @@
 		"message": "Properties export karein"
 	},
 	"exportPropertiesDescription": {
-		"message": "Web Clipper properties ko $strong_start$types.json$strong_end$ file mein save karein jise aapke Obsidian vault mein, ya dusre devices par Web Clipper mein import kiya ja sakta hai.",
+		"message": "Web Clipper properties ko $strong_start$types.json$strong_end$ file mein save karein jise aapke Emacs vault mein, ya dusre devices par Web Clipper mein import kiya ja sakta hai.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -283,10 +283,10 @@
 		}
 	},
 	"extensionDescription": {
-		"message": "Web se content ko ek private aur durable format mein save karein jise aap offline access kar sakte hain. Obsidian ka official browser extension."
+		"message": "Web se content ko ek private aur durable format mein save karein jise aap offline access kar sakte hain. Emacs ka official browser extension."
 	},
 	"extensionName": {
-		"message": "Obsidian Web Clipper"
+		"message": "org-clipper"
 	},
 	"failedToCopyText": {
 		"message": "Text copy karne mein fail"
@@ -409,7 +409,7 @@
 		"message": "Properties import karein"
 	},
 	"importPropertiesDescription": {
-		"message": "Obsidian se properties import karne ke liye, apne vault mein $strong_1_start$types.json$strong_1_end$ file ko $strong_2_start$.obsidian$strong_2_end$ folder mein dhundhein. Note karein ki yeh folder default roop se adhikansh operating systems mein hidden hota hai.",
+		"message": "Emacs se properties import karne ke liye, apne vault mein $strong_1_start$types.json$strong_1_end$ file ko $strong_2_start$.emacs.d$strong_2_end$ folder mein dhundhein. Note karein ki yeh folder default roop se adhikansh operating systems mein hidden hota hai.",
 		"placeholders": {
 			"strong_1_end": {
 				"content": "</strong>"
@@ -467,7 +467,7 @@
 		"message": "Legacy mode"
 	},
 	"legacyModeDescription": {
-		"message": "Obsidian 1.6.7 ya purane version ke saath compatible URI clipping method ka upyog karta hai. Note karein ki aap kitna content clip kar sakte hain woh aapke browser aur OS dwara limited hai. Kuch pages bina kisi errors ke fail ho sakte hain."
+		"message": "Emacs 1.6.7 ya purane version ke saath compatible URI clipping method ka upyog karta hai. Note karein ki aap kitna content clip kar sakte hain woh aapke browser aur OS dwara limited hai. Kuch pages bina kisi errors ke fail ho sakte hain."
 	},
 	"loadArticle": {
 		"message": "लेख पढ़ें"
@@ -542,7 +542,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/variables\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -958,7 +958,7 @@
 		"message": "Clipped note ko bina open kiye save karein"
 	},
 	"silentOpenDescription": {
-		"message": "Clipped notes save ho jayengi lekin naye tab mein nahi khulengi. Obsidian abhi bhi foreground mein layega."
+		"message": "Clipped notes save ho jayengi lekin naye tab mein nahi khulengi. Emacs abhi bhi foreground mein layega."
 	},
 	"sort": {
 		"message": "क्रमबद्ध करें"
@@ -1053,7 +1053,7 @@
 		"message": "Vaults"
 	},
 	"vaultsDescription": {
-		"message": "By default, clipped notes currently open vault mein save hoti hain. Agar aap different vaults mein save karne ka option chahte hain to aap yahan vaults add kar sakte hain. Vault names Obsidian vault ke name se exactly match karne chahiye. Vault add karne ke liye $strong_start$enter$strong_end$ dabaein.",
+		"message": "By default, clipped notes currently open vault mein save hoti hain. Agar aap different vaults mein save karne ka option chahte hain to aap yahan vaults add kar sakte hain. Vault names Emacs vault ke name se exactly match karne chahiye. Vault add karne ke liye $strong_start$enter$strong_end$ dabaein.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"

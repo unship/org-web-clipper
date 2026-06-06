@@ -17,8 +17,8 @@
 	"addProviderTitle": {
 		"message": "Szolgáltató hozzáadása"
 	},
-	"addToObsidian": {
-		"message": "Hozzáadás az Obsidianhoz"
+	"addToEmacs": {
+		"message": "Hozzáadás az Emacshoz"
 	},
 	"addVaultPlaceholder": {
 		"message": "Nyomd meg az Entert egy vault hozzáadásához"
@@ -45,7 +45,7 @@
 		"message": "Nincs API-kulcs"
 	},
 	"apiKeysWarning": {
-		"message": "Külső szolgáltató használatával elfogadod annak feltételeit és adatvédelmi irányelveit. Az interpreter kérései közvetlenül a választott szolgáltatóhoz kerülnek elküldésre. Az Obsidian nem gyűjt és nem tárol semmilyen adatot a kéréseidről."
+		"message": "Külső szolgáltató használatával elfogadod annak feltételeit és adatvédelmi irányelveit. Az interpreter kérései közvetlenül a választott szolgáltatóhoz kerülnek elküldésre. Az Emacs nem gyűjt és nem tárol semmilyen adatot a kéréseidről."
 	},
 	"appendToDaily": {
 		"message": "Hozzáadás a napi jegyzethez, alul"
@@ -96,7 +96,7 @@
 		"message": "Klip viselkedése"
 	},
 	"clipBehaviorDescription": {
-		"message": "Válaszd ki, hogyan legyen a kiemelt tartalom mentve az Obsidianba. Meghatározza a $strong_start${{content}}$strong_end$ változót.",
+		"message": "Válaszd ki, hogyan legyen a kiemelt tartalom mentve az Emacsba. Meghatározza a $strong_start${{content}}$strong_end$ változót.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -107,7 +107,7 @@
 		}
 	},
 	"clipboardError": {
-		"message": "Az Obsidian nem tud hozzáférni a vágólapodhoz. Próbáld ki az itt található hibaelhárítási útmutatót: $1",
+		"message": "Az Emacs nem tud hozzáférni a vágólapodhoz. Próbáld ki az itt található hibaelhárítási útmutatót: $1",
 		"placeholders": {
 			"1": {
 				"content": "$1"
@@ -118,7 +118,7 @@
 		"message": "Bezárás"
 	},
 	"commandOpenClipper": {
-		"message": "Obsidian Clipper megnyitása"
+		"message": "Emacs Clipper megnyitása"
 	},
 	"commandQuickClip": {
 		"message": "Gyors klip"
@@ -196,13 +196,13 @@
 		"message": "Duplikálás"
 	},
 	"earlyAccessDescription": {
-		"message": "Használd azokat a funkciókat, amelyekhez az Obsidian legfrissebb $link_start$korai hozzáférésű verziója$link_end$ szükséges. Jelenleg az Obsidian 1.7.2 vagy újabb verziója szükséges.",
+		"message": "Használd azokat a funkciókat, amelyekhez az Emacs legfrissebb $link_start$korai hozzáférésű verziója$link_end$ szükséges. Jelenleg az Emacs 1.7.2 vagy újabb verziója szükséges.",
 		"placeholders": {
 			"link_end": {
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/Obsidian/Early+access+versions\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -225,7 +225,7 @@
 		"message": "Beágyazott"
 	},
 	"enableHighlighterDescription": {
-		"message": "Kiemelheted a weboldalakon a tartalmat, amit elmenthetsz az Obsidianba."
+		"message": "Kiemelheted a weboldalakon a tartalmat, amit elmenthetsz az Emacsba."
 	},
 	"enableInterpreter": {
 		"message": "Interpreter engedélyezése"
@@ -237,7 +237,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/interpreter\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			},
 			"strong_end": {
 				"content": "</strong>"
@@ -272,7 +272,7 @@
 		"message": "Tulajdonságok exportálása"
 	},
 	"exportPropertiesDescription": {
-		"message": "A Web Clipper tulajdonságainak mentése egy $strong_start$types.json$strong_end$ fájlba, amely importálható az Obsidian vaultodba, vagy a Web Clipperbe más eszközökön.",
+		"message": "A Web Clipper tulajdonságainak mentése egy $strong_start$types.json$strong_end$ fájlba, amely importálható az Emacs vaultodba, vagy a Web Clipperbe más eszközökön.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"
@@ -283,10 +283,10 @@
 		}
 	},
 	"extensionDescription": {
-		"message": "Ments tartalmat a webről privát és tartós formátumban, amelyet offline is elérhetsz. Az Obsidian hivatalos böngészőbővítménye."
+		"message": "Ments tartalmat a webről privát és tartós formátumban, amelyet offline is elérhetsz. Az Emacs hivatalos böngészőbővítménye."
 	},
 	"extensionName": {
-		"message": "Obsidian Web Clipper"
+		"message": "org-clipper"
 	},
 	"failedToCopyText": {
 		"message": "Nem sikerült a szöveg másolása"
@@ -409,7 +409,7 @@
 		"message": "Tulajdonságok importálása"
 	},
 	"importPropertiesDescription": {
-		"message": "A tulajdonságaid Obsidianból történő importálásához keresd meg a $strong_1_start$types.json$strong_1_end$ fájlt a vaultodon belüli $strong_2_start$.obsidian$strong_2_end$ mappában. Vedd figyelembe, hogy ez a mappa a legtöbb operációs rendszeren alapértelmezetten rejtett.",
+		"message": "A tulajdonságaid Emacsból történő importálásához keresd meg a $strong_1_start$types.json$strong_1_end$ fájlt a vaultodon belüli $strong_2_start$.emacs.d$strong_2_end$ mappában. Vedd figyelembe, hogy ez a mappa a legtöbb operációs rendszeren alapértelmezetten rejtett.",
 		"placeholders": {
 			"strong_1_end": {
 				"content": "</strong>"
@@ -467,7 +467,7 @@
 		"message": "Örökölt mód"
 	},
 	"legacyModeDescription": {
-		"message": "Az Obsidian 1.6.7-es vagy korábbi verziójával kompatibilis URI-alapú klipelési módszert használja. Vedd figyelembe, hogy a klipelhető tartalom hossza a böngésződ és az operációs rendszered korlátaitól függ. Egyes oldalak hibajelzés nélkül is meghiúsulhatnak."
+		"message": "Az Emacs 1.6.7-es vagy korábbi verziójával kompatibilis URI-alapú klipelési módszert használja. Vedd figyelembe, hogy a klipelhető tartalom hossza a böngésződ és az operációs rendszered korlátaitól függ. Egyes oldalak hibajelzés nélkül is meghiúsulhatnak."
 	},
 	"loadArticle": {
 		"message": "Cikk olvasása"
@@ -542,7 +542,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/variables\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -958,7 +958,7 @@
 		"message": "A klipelt jegyzet mentése megnyitás nélkül"
 	},
 	"silentOpenDescription": {
-		"message": "A klipelt jegyzetek mentésre kerülnek, de nem nyílnak meg új lapon. Az Obsidian továbbra is előtérbe kerül."
+		"message": "A klipelt jegyzetek mentésre kerülnek, de nem nyílnak meg új lapon. Az Emacs továbbra is előtérbe kerül."
 	},
 	"sort": {
 		"message": "Rendezés"
@@ -1053,7 +1053,7 @@
 		"message": "Vaultok"
 	},
 	"vaultsDescription": {
-		"message": "Alapértelmezés szerint a klipelt jegyzetek az éppen megnyitott vaultba kerülnek mentésre. Itt hozzáadhatsz vaultokat, ha szeretnéd a lehetőséget, hogy különböző vaultokba ments. A vaultneveknek pontosan meg kell egyezniük az Obsidian vault nevével. Vault hozzáadásához nyomd meg az $strong_start$Enter$strong_end$ billentyűt.",
+		"message": "Alapértelmezés szerint a klipelt jegyzetek az éppen megnyitott vaultba kerülnek mentésre. Itt hozzáadhatsz vaultokat, ha szeretnéd a lehetőséget, hogy különböző vaultokba ments. A vaultneveknek pontosan meg kell egyezniük az Emacs vault nevével. Vault hozzáadásához nyomd meg az $strong_start$Enter$strong_end$ billentyűt.",
 		"placeholders": {
 			"strong_end": {
 				"content": "</strong>"

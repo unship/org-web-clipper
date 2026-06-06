@@ -17,7 +17,7 @@
 	"addProviderTitle": {
 		"message": "أضف مزود"
 	},
-	"addToObsidian": {
+	"addToEmacs": {
 		"message": "إضافة إلى أوبسيديان"
 	},
 	"addVaultPlaceholder": {
@@ -45,7 +45,7 @@
 		"message": "لا يوجد مفتاح API"
 	},
 	"apiKeysWarning": {
-		"message": "باستخدام مزود خارجي، فإنك توافق على شروطهم وسياسة الخصوصية الخاصة بهم. يتم إرسال طلبات المفسر مباشرة إلى المزود الذي تختاره. لا يقوم Obsidian بجمع أو تخزين أي بيانات حول طلباتك."
+		"message": "باستخدام مزود خارجي، فإنك توافق على شروطهم وسياسة الخصوصية الخاصة بهم. يتم إرسال طلبات المفسر مباشرة إلى المزود الذي تختاره. لا يقوم Emacs بجمع أو تخزين أي بيانات حول طلباتك."
 	},
 	"appendToDaily": {
 		"message": "إضافة إلى الملاحظة اليومية، في النهاية"
@@ -107,7 +107,7 @@
 		}
 	},
 	"clipboardError": {
-		"message": "لا يستطيع Obsidian الوصول إلى الحافظة لديك. جرّب إرشادات استكشاف الأخطاء وإصلاحها هنا: $1",
+		"message": "لا يستطيع Emacs الوصول إلى الحافظة لديك. جرّب إرشادات استكشاف الأخطاء وإصلاحها هنا: $1",
 		"placeholders": {
 			"1": {
 				"content": "$1"
@@ -202,7 +202,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/Obsidian/Early+access+versions\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
@@ -237,7 +237,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/interpreter\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			},
 			"strong_end": {
 				"content": "</strong>"
@@ -409,7 +409,7 @@
 		"message": "استيراد الخصائص"
 	},
 	"importPropertiesDescription": {
-		"message": "لاستيراد خصائصك من أوبسيديان، حدد موقع ملف $strong_1_start$types.json$strong_1_end$ في مجلد $strong_2_start$.obsidian$strong_2_end$ داخل خزينتك. لاحظ أن هذا المجلد مخفي افتراضياً في معظم أنظمة التشغيل.",
+		"message": "لاستيراد خصائصك من أوبسيديان، حدد موقع ملف $strong_1_start$types.json$strong_1_end$ في مجلد $strong_2_start$.emacs.d$strong_2_end$ داخل خزينتك. لاحظ أن هذا المجلد مخفي افتراضياً في معظم أنظمة التشغيل.",
 		"placeholders": {
 			"strong_1_end": {
 				"content": "</strong>"
@@ -542,7 +542,7 @@
 				"content": "</a>"
 			},
 			"link_start": {
-				"content": "<a href=\"https://help.obsidian.md/web-clipper/variables\" target=\"_blank\">"
+				"content": "<a href=\"https://github.com/ed/org-clipper\" target=\"_blank\">"
 			}
 		}
 	},
