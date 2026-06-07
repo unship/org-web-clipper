@@ -63,4 +63,51 @@ describe('saveToEmacs', () => {
     await expect(saveToEmacs({ properties: [], body: 'x', noteName: 'T', behavior: 'create', url: 'u', tags: [] },
       { endpoint: '127.0.0.1:17654', token: '' })).rejects.toThrow(/HTTP 403: bad token/);
   });
+
+  // --- image attachments (HTTP transport) ---
+  const TWIMG = 'https://pbs.twimg.com/media/HKAtREzaIAAMlrj?format=jpg&name=large';
+  const imgBytes = (s: string) => new Uint8Array([...s].map(c => c.charCodeAt(0)));
+  // Route image GETs vs the /capture POST; record the POSTed body.
+  const routedFetch = (sent: { body?: any }, imageResp: (u: string) => any) =>
+    vi.fn(async (url: any, opts: any) => {
+      if (String(url).includes('/capture')) { sent.body = JSON.parse(opts.body); return { ok: true, json: async () => ({}) } as any; }
+      return imageResp(String(url));
+    });
+
+  it('fetches body images and attaches them to the POST payload as {url,filename,dataBase64}', async () => {
+    const sent: { body?: any } = {};
+    globalThis.fetch = routedFetch(sent, () => ({
+      ok: true, status: 200,
+      headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'image/jpeg' : null) },
+      arrayBuffer: async () => imgBytes('JPEGBYTES').buffer,
+    })) as any;
+    await saveToEmacs(
+      { properties: [], body: `![Image](${TWIMG})`, noteName: 'T', behavior: 'create', url: 'https://x', tags: [] },
+      { endpoint: '127.0.0.1:17654', token: '' });
+    expect(sent.body.images).toHaveLength(1);
+    expect(sent.body.images[0].url).toBe(TWIMG);
+    expect(sent.body.images[0].filename).toBe('HKAtREzaIAAMlrj.jpg');
+    expect(atob(sent.body.images[0].dataBase64)).toBe('JPEGBYTES');
+    // the org body still carries the remote link for Emacs to rewrite
+    expect(sent.body.body).toContain(`[[${TWIMG}]]`);
+  });
+
+  it('omits the images field when the body has no images', async () => {
+    const sent: { body?: any } = {};
+    globalThis.fetch = routedFetch(sent, () => { throw new Error('should not fetch'); }) as any;
+    await saveToEmacs(
+      { properties: [], body: 'plain text, no images', noteName: 'T', behavior: 'create', url: 'u', tags: [] },
+      { endpoint: '127.0.0.1:17654', token: '' });
+    expect(sent.body.images).toBeUndefined();
+  });
+
+  it('omits the images field when every image fetch fails (keeps the remote link)', async () => {
+    const sent: { body?: any } = {};
+    globalThis.fetch = routedFetch(sent, () => ({ ok: false, status: 404, headers: { get: () => null }, arrayBuffer: async () => new ArrayBuffer(0) })) as any;
+    await saveToEmacs(
+      { properties: [], body: `![Image](${TWIMG})`, noteName: 'T', behavior: 'create', url: 'u', tags: [] },
+      { endpoint: '127.0.0.1:17654', token: '' });
+    expect(sent.body.images).toBeUndefined();
+    expect(sent.body.body).toContain(`[[${TWIMG}]]`);
+  });
 });

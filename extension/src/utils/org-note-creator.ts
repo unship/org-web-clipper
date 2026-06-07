@@ -1,5 +1,6 @@
 import type { Property, Template } from '../types/types';
 import { mdToOrg } from './md-to-org';
+import { collectImageUrls, collectMarkdownImageUrls, fetchImages, type EmacsImage } from './fetch-images';
 
 const orgKey = (name: string): string =>
   name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -35,6 +36,7 @@ export interface CapturePayload {
   tags: string[];
   behavior: Template['behavior'];
   properties: Record<string, string>; // non-standard props -> Org drawer (Emacs writes them)
+  images?: EmacsImage[]; // fetched image bytes -> Emacs org-attach dir + [[attachment:file]]
 }
 
 /** Split the template's properties into the standard fields org-clipper--insert-clip
@@ -69,6 +71,16 @@ export async function saveToEmacs(clip: EmacsClip, cfg: EmacsTransport): Promise
   const endpoint = (cfg.endpoint || '127.0.0.1:17654').replace(/^https?:\/\//, '');
   const url = `http://${endpoint}/capture`;
   const payload = buildCapturePayload(clip, cfg.template || '');
+  // HTTP transport embeds images as local org-attach attachments: fetch the body's
+  // image bytes here (the popup holds the <all_urls> host permission, so cross-origin
+  // CDN images like pbs.twimg.com are readable) and ship them base64-encoded. Emacs
+  // writes them into the clip's org-attach dir and rewrites [[url]] -> [[attachment:file]].
+  // Images that fail to fetch are omitted, so Emacs keeps their remote link.
+  const imageUrls = collectImageUrls(payload.body, collectMarkdownImageUrls(clip.body || ''));
+  if (imageUrls.length) {
+    const images = await fetchImages(imageUrls);
+    if (images.length) payload.images = images;
+  }
   let resp: Response;
   try {
     resp = await fetch(url, {
