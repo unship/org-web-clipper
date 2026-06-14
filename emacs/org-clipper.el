@@ -564,5 +564,352 @@ the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
     tok))
 
 
+
+;;; Remote image preview + localize
+
+;; Preview overlays remote image links inline (display-only); localize
+;; downloads them and rewrites [[url]] -> [[attachment:FILE]] so clipped
+;; articles stop depending on live CDN links.  Complements the base64
+;; payload path in `org-clipper--attach-images'; reuses
+;; `org-clipper--attach-filename'.
+
+(defcustom org-clipper-image-cache-dir
+  (expand-file-name "org-clipper-images/" temporary-file-directory)
+  "Directory used to cache downloaded remote images.  Files are named
+by MD5 of the URL plus the original extension."
+  :type 'directory)
+
+(defcustom org-clipper-image-max-width 720
+  "Max-width (pixels) for inline previews of remote images."
+  :type 'integer)
+
+(defconst org-clipper--remote-image-link-re
+  "\\[\\[\\(https?://[^][[:space:]]+\\.\\(?:png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\|bmp\\)\\(?:\\?[^][]*\\)?\\)\\(?:\\]\\[\\([^]]*\\)\\]\\)?\\]\\]"
+  "Match an Org link whose URL is a remote image.
+Capture 1: the URL.  Capture 2 (optional): the description.  Both the
+plain `[[url]]' and the descriptive `[[url][desc]]' forms are caught.")
+
+(defun org-clipper--cached-image-path (url)
+  "Return the cache path where URL would be stored (independent of
+whether the file exists yet)."
+  (let ((ext (or (file-name-extension
+                  (url-filename (url-generic-parse-url url)))
+                 "img")))
+    (expand-file-name (concat (md5 url) "." ext)
+                      org-clipper-image-cache-dir)))
+
+(defun org-clipper--make-image-overlay (buf link-beg link-end local-path)
+  "Place an image overlay in BUF spanning [LINK-BEG, LINK-END] showing
+the image at LOCAL-PATH."
+  (when (and (buffer-live-p buf) (file-exists-p local-path))
+    (with-current-buffer buf
+      (when (and (<= link-beg (point-max))
+                 (<= link-end (point-max)))
+        (let* ((img (create-image local-path nil nil
+                                  :max-width  org-clipper-image-max-width
+                                  :max-height org-clipper-image-max-width))
+               (ov  (make-overlay link-beg link-end)))
+          (overlay-put ov 'display img)
+          (overlay-put ov 'face 'default)
+          (overlay-put ov 'keymap image-map)
+          (overlay-put ov 'org-clipper-image-overlay t)
+          (overlay-put ov 'modification-hooks
+                       (list (lambda (ov &rest _) (delete-overlay ov)))))))))
+
+(defun org-clipper--fetch-and-overlay-async (url buf link-beg link-end)
+  "Asynchronously fetch URL into the cache then place an overlay
+in BUF over [LINK-BEG, LINK-END].  Never blocks: uses
+`url-retrieve' which schedules a process and returns immediately,
+so the daemon stays responsive even on slow / dead URLs."
+  (let ((local (org-clipper--cached-image-path url)))
+    (if (file-exists-p local)
+        (org-clipper--make-image-overlay buf link-beg link-end local)
+      (url-retrieve
+       url
+       (lambda (status &rest _)
+         (cond
+          ((plist-get status :error)
+           (message "org-clipper: failed %s: %s" url (plist-get status :error)))
+          (t
+           (goto-char (point-min))
+           (when (re-search-forward "\r?\n\r?\n" nil t)  ; skip HTTP headers
+             (let ((coding-system-for-write 'binary))
+               (write-region (point) (point-max) local nil 'silent)))
+           (kill-buffer (current-buffer))
+           (org-clipper--make-image-overlay buf link-beg link-end local))))
+       nil 'silent 'inhibit-cookies))))
+
+;;;###autoload
+(defun org-clipper-preview-remote-images (&optional beg end)
+  "Asynchronously fetch + overlay remote image links between BEG and
+END (default: whole buffer).  Idempotent: removes any prior overlays we
+laid down first.  Fetches happen via `url-retrieve' so this command
+returns immediately and the daemon never blocks on slow URLs — images
+appear as their downloads complete."
+  (interactive)
+  (unless (file-directory-p org-clipper-image-cache-dir)
+    (make-directory org-clipper-image-cache-dir t))
+  (let ((beg (or beg (point-min)))
+        (end (or end (point-max)))
+        (buf (current-buffer))
+        (queued 0))
+    (dolist (ov (overlays-in beg end))
+      (when (overlay-get ov 'org-clipper-image-overlay)
+        (delete-overlay ov)))
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward org-clipper--remote-image-link-re end t)
+        (org-clipper--fetch-and-overlay-async
+         (match-string 1) buf (match-beginning 0) (match-end 0))
+        (cl-incf queued)))
+    (when (called-interactively-p 'any)
+      (message "org-clipper: %d image%s queued" queued (if (= queued 1) "" "s")))
+    queued))
+
+;;;###autoload
+(defun org-clipper-toggle-image-at-point ()
+  "Toggle inline preview of the remote image link at point.
+Intended for `org-ctrl-c-ctrl-c-hook': returns non-nil when it
+handled point, nil otherwise (so org's other C-c C-c actions still
+run on non-image links). Mirrors `markdown-toggle-inline-images'."
+  (let ((elem (and (derived-mode-p 'org-mode) (org-element-context))))
+    (when (and elem
+               (eq (org-element-type elem) 'link)
+               (member (org-element-property :type elem) '("http" "https"))
+               (string-match-p
+                "\\.\\(?:png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\|bmp\\)\\(?:\\?[^]]*\\)?\\'"
+                (or (org-element-property :path elem) "")))
+      (let* ((url (concat (org-element-property :type elem) ":"
+                          (org-element-property :path elem)))
+             (beg (org-element-property :begin elem))
+             ;; :end usually includes trailing whitespace; trim so the
+             ;; overlay doesn't swallow the following blank line.
+             (end (save-excursion
+                    (goto-char (org-element-property :end elem))
+                    (skip-chars-backward " \t\n")
+                    (point)))
+             (existing nil))
+        (dolist (ov (overlays-in beg end))
+          (when (overlay-get ov 'org-clipper-image-overlay)
+            (delete-overlay ov)
+            (setq existing t)))
+        (if existing
+            (message "Image preview hidden.")
+          (unless (file-directory-p org-clipper-image-cache-dir)
+            (make-directory org-clipper-image-cache-dir t))
+          (org-clipper--fetch-and-overlay-async url (current-buffer) beg end)
+          (message "Loading image preview…"))
+        t))))
+
+;;;; --- Localize remote images into org attachments --------------------
+;;;; `org-clipper-preview-remote-images' only *overlays* remote images; this
+;;;; downloads them and rewrites each `[[https://…]]' to `[[attachment:FILE]]'
+;;;; the same way the capture flow does, so clipped articles stop depending on
+;;;; live CDN links.  Storage follows the repo convention: the surrounding
+;;;; entry's ID-bucketed org-attach dir (resolved via inheritance).
+
+(defun org-clipper--image-source-url (url)
+  "Resolve URL to the underlying image URL, unwrapping CDN/proxy wrappers.
+Image proxies either pass the real URL in a `url=' query parameter
+(Next.js `/_next/image', Vercel, …) or embed its percent-encoded form in
+their own path (Substack `image/fetch/…').  Return that inner URL when
+present, else URL unchanged.  Used only to derive a meaningful filename
+and extension — the original URL is still what gets fetched."
+  (require 'url-util)
+  (cond
+   ;; Proxy passes the real URL in a ?url= query param (Next.js, Vercel…).
+   ((string-match "[?&]url=\\(https?%3[Aa]%2[Ff]%2[Ff][^&]+\\|https?://[^&]+\\)" url)
+    (url-unhex-string (match-string 1 url)))
+   ;; Proxy embeds the percent-encoded real URL in its own path (Substack…):
+   ;; after decoding, take everything from the LAST http(s):// occurrence.
+   (t
+    (let ((decoded (url-unhex-string url)))
+      (if (and (string-match ".*\\(https?://\\)" decoded)
+               (> (match-beginning 1) 0))
+          (substring decoded (match-beginning 1))
+        url)))))
+
+(defconst org-clipper--image-extension-re
+  "\\.\\(?:png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\|bmp\\|tiff?\\|heic\\)\\'"
+  "Match a trailing image-file extension.")
+
+(defun org-clipper--image-url-p (url)
+  "Non-nil when bare link URL is worth fetching as an image.
+True when the resolved source URL's path carries an image extension, the
+URL has a `format=<imgext>' query (Twitter media), or the host is a known
+image CDN/proxy.  The Content-Type check at download time is the final
+authority; this only avoids fetching obvious non-images (article links)."
+  (require 'url-parse)
+  (save-match-data                    ; `--image-source-url' uses `string-match'
+    (let* ((src  (org-clipper--image-source-url url))
+           (path (car (url-path-and-query (url-generic-parse-url src))))
+           (case-fold-search t))
+      (or (string-match-p org-clipper--image-extension-re (or path ""))
+          (string-match-p "[?&]format=\\(?:png\\|jpe?g\\|gif\\|webp\\|avif\\)\\b" url)
+          (string-match-p "\\`https?://\\(?:pbs\\.twimg\\.com\\|miro\\.medium\\.com\\|[^/]*\\.substackcdn\\.com\\)/" url)
+          (string-match-p "/_next/image\\?" url)))))
+
+(defun org-clipper--content-type-extension (content-type)
+  "Map an HTTP CONTENT-TYPE header value to a file extension, or nil.
+Parameters after `;' are ignored and matching is case-insensitive.  A nil
+or non-image type yields nil, which the caller also uses as the \"this is
+not really an image\" guard."
+  (when (stringp content-type)
+    (cdr (assoc (downcase (string-trim (car (split-string content-type ";"))))
+                '(("image/jpeg"     . "jpg")
+                  ("image/jpg"      . "jpg")
+                  ("image/png"      . "png")
+                  ("image/webp"     . "webp")
+                  ("image/gif"      . "gif")
+                  ("image/svg+xml"  . "svg")
+                  ("image/avif"     . "avif")
+                  ("image/bmp"      . "bmp")
+                  ("image/x-ms-bmp" . "bmp")
+                  ("image/tiff"     . "tiff"))))))
+
+(defcustom org-clipper-localize-user-agent
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+  "User-Agent sent when downloading remote images, so hotlink-sensitive
+hosts (Twitter, Medium, …) don't reject the fetch."
+  :type 'string :group 'org-clipper)
+
+(defun org-clipper--download-image (url)
+  "Fetch URL synchronously.  Return (CONTENT-TYPE . TEMPFILE) on a 2xx
+response with a body — TEMPFILE holds the raw bytes — or nil on any
+failure.  Follows redirects and sends a desktop User-Agent so hotlink-
+sensitive CDNs cooperate."
+  (require 'url)
+  (let* ((url-request-extra-headers
+          (list (cons "User-Agent" org-clipper-localize-user-agent)))
+         (url-mime-accept-string "image/avif,image/webp,image/png,image/*,*/*;q=0.8")
+         (url-mime-encoding-string "identity") ; raw image bytes, never gzip
+         (buf (ignore-errors (url-retrieve-synchronously url t t 30))))
+    (when (buffer-live-p buf)
+      (unwind-protect
+          (with-current-buffer buf
+            (goto-char (point-min))
+            (let ((status (and (looking-at "HTTP/[0-9.]+ +\\([0-9]+\\)")
+                               (string-to-number (match-string 1))))
+                  (ctype nil))
+              (save-excursion
+                (when (re-search-forward "^Content-Type:[ \t]*\\(.*?\\)[ \t]*$" nil t)
+                  (setq ctype (match-string 1))))
+              (when (and status (>= status 200) (< status 300)
+                         (re-search-forward "\r?\n\r?\n" nil t)
+                         (< (point) (point-max)))
+                (let ((tmp (make-temp-file "oclr-img-"))
+                      (coding-system-for-write 'binary))
+                  (write-region (point) (point-max) tmp nil 'silent)
+                  (cons ctype tmp)))))
+        (kill-buffer buf)))))
+
+(defun org-clipper--collect-image-links (beg end)
+  "Return a list of (URL START END) for bare remote image links between
+BEG and END in the current buffer, in buffer order.  START and END are
+*markers* on the whole `[[…]]' link, created up front so they track the
+rewrites done while the list is processed — converting an earlier link
+must not shift a later link's span (else the file is corrupted).  The
+buffer positions are read before the image predicate runs, so its internal
+`string-match' use cannot leak into the caller's match data."
+  (let ((acc '()))
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward "\\[\\[\\(https?://[^][]+\\)\\]\\]" end t)
+        (let ((url (match-string-no-properties 1))
+              (mb  (match-beginning 0))
+              (me  (match-end 0)))
+          (when (org-clipper--image-url-p url)
+            (push (list url (copy-marker mb) (copy-marker me)) acc)))))
+    (nreverse acc)))
+
+;;;###autoload
+(defun org-clipper-localize-remote-images (&optional beg end)
+  "Download bare remote image links and turn them into org attachments.
+
+Scan the buffer (or the active region BEG..END) for *bare* `[[https://…]]'
+links that resolve to images — `[[url][desc]]' reference links are left
+alone — download each, attach it to the surrounding entry (its inherited
+ID-bucketed `org-attach' dir, matching the repo's `[[attachment:…]]'
+convention), and rewrite the link to `[[attachment:FILE]]'.
+
+Comprehensive: Twitter media, Next.js image proxies and extension-less CDN
+images are handled, with the file extension taken from the response
+Content-Type.  A fetch that isn't a 2xx image is skipped untouched and
+listed in `*org-localize-remote-images*'.  Idempotent and safe to re-run;
+`~/org' is git-tracked, so results are reviewable."
+  (interactive (when (use-region-p)
+                 (list (region-beginning) (region-end))))
+  (require 'org-attach)
+  (require 'org-clipper)
+  (require 'url-parse)
+  (unless (derived-mode-p 'org-mode) (user-error "Not an Org buffer"))
+  (let ((beg (or beg (point-min)))
+        (end (or end (point-max)))
+        (n-done 0) (skipped '()))
+    ;; Collect first; markers track positions across the rewrites below.
+    (dolist (link (org-clipper--collect-image-links beg end))
+      (let ((url  (nth 0 link))
+            (mbeg (nth 1 link))         ; markers from collection; they track
+            (mend (nth 2 link)))        ; edits, so later links stay on target
+        (message "org-clipper: localizing %s …" url)
+        (condition-case err
+            (let ((dl (org-clipper--download-image url)))
+              (cond
+               ((null dl) (push (cons url "download failed") skipped))
+               ((not (org-clipper--content-type-extension (car dl)))
+                (ignore-errors (delete-file (cdr dl)))
+                (push (cons url (format "not an image (%s)"
+                                        (or (car dl) "no Content-Type")))
+                      skipped))
+               (t
+                (let ((ext (org-clipper--content-type-extension (car dl)))
+                      (tmp (cdr dl)))
+                  (save-excursion
+                    (goto-char mbeg)
+                    (let* ((dir (or (org-attach-dir)
+                                    (progn (org-back-to-heading t)
+                                           (org-id-get-create)
+                                           (org-attach-dir-get-create))))
+                           (used (let ((h (make-hash-table :test 'equal)))
+                                   (dolist (f (ignore-errors
+                                                (directory-files dir nil "\\`[^.]"))
+                                              h)
+                                     (puthash f t h))))
+                           (stem (file-name-base
+                                  (or (car (url-path-and-query
+                                            (url-generic-parse-url
+                                             (org-clipper--image-source-url url))))
+                                      "")))
+                           (stem (if (string-empty-p stem) "image" stem))
+                           (name (org-clipper--attach-filename
+                                  (concat stem "." ext) used))
+                           (dest (expand-file-name name dir)))
+                      (copy-file tmp dest t)
+                      (ignore-errors (delete-file tmp))
+                      (goto-char mbeg)
+                      (delete-region mbeg mend)
+                      (insert (concat "[[attachment:" name "]]"))
+                      (cl-incf n-done)))))))
+          (error (push (cons url (error-message-string err)) skipped)))
+        (set-marker mbeg nil)
+        (set-marker mend nil)))
+    (when (derived-mode-p 'org-mode)
+      (ignore-errors (org-display-inline-images nil t)))
+    (when skipped
+      (with-current-buffer (get-buffer-create "*org-localize-remote-images*")
+        (erase-buffer)
+        (insert (format "Skipped %d remote image(s):\n\n" (length skipped)))
+        (dolist (s (nreverse skipped))
+          (insert (format "  %s\n    → %s\n" (car s) (cdr s))))
+        (goto-char (point-min))
+        (display-buffer (current-buffer))))
+    (message "org-clipper: localized %d image%s%s"
+             n-done (if (= n-done 1) "" "s")
+             (if skipped (format ", skipped %d (see *org-localize-remote-images*)"
+                                 (length skipped))
+               ""))
+    (list :localized n-done :skipped (length skipped))))
+
 (provide 'org-clipper)
 ;;; org-clipper.el ends here

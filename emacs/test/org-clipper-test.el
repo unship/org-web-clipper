@@ -370,3 +370,140 @@
         (with-temp-buffer
           (insert-file-contents tmp)
           (should (string-match-p "^:READING_TIME: 5 min$" (buffer-string)))))))))
+
+
+;;;; ===== remote-image localize (migrated from doom config) =====
+;;;; org-clipper--image-source-url : unwrap CDN/proxy wrappers ----------------
+
+(ert-deftest org-clipper-localize/source-url-direct ()
+  "A plain image URL is returned unchanged."
+  (should (equal (org-clipper--image-source-url
+                  "https://developer-blogs.nvidia.com/wp-content/uploads/2026/05/image4-2.webp")
+                 "https://developer-blogs.nvidia.com/wp-content/uploads/2026/05/image4-2.webp")))
+
+(ert-deftest org-clipper-localize/source-url-nextjs-proxy ()
+  "Next.js /_next/image?url= proxy resolves to the decoded inner URL."
+  (should (equal (org-clipper--image-source-url
+                  "https://www.anthropic.com/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F52a19d636c659cf4515dc0d7d70b8ceb1bbfd768-2200x1276.png&w=3840&q=75")
+                 "https://www-cdn.anthropic.com/images/4zrzovbb/website/52a19d636c659cf4515dc0d7d70b8ceb1bbfd768-2200x1276.png")))
+
+(ert-deftest org-clipper-localize/source-url-embedded-path ()
+  "Substack image/fetch with a path-embedded encoded URL resolves to the inner URL."
+  (should (equal (org-clipper--image-source-url
+                  "https://substackcdn.com/image/fetch/$s_!NpOz!,w_1456,c_limit,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F04d4f8f4-c0de-4a00-820b-c4e5c9cbe845_742x389.png")
+                 "https://substack-post-media.s3.amazonaws.com/public/images/04d4f8f4-c0de-4a00-820b-c4e5c9cbe845_742x389.png")))
+
+(ert-deftest org-clipper-localize/source-url-twitter-query ()
+  "Twitter media URL (format in query, no inner URL) is returned unchanged."
+  (should (equal (org-clipper--image-source-url
+                  "https://pbs.twimg.com/media/HJxkZ_wbEAAHWLa?format=jpg&name=large")
+                 "https://pbs.twimg.com/media/HJxkZ_wbEAAHWLa?format=jpg&name=large")))
+
+;;;; org-clipper--image-url-p : which bare links are worth fetching -----------
+
+(ert-deftest org-clipper-localize/image-p-extension ()
+  "A URL whose path ends in an image extension is an image."
+  (should (org-clipper--image-url-p
+           "https://miro.medium.com/v2/resize:fit:1400/format:webp/1*LwW9inw66JSJfdVTaZH26Q.png")))
+
+(ert-deftest org-clipper-localize/image-p-extensionless-known-host ()
+  "An extension-less Medium CDN image is recognised by host."
+  (should (org-clipper--image-url-p
+           "https://miro.medium.com/v2/resize:fit:1400/format:webp/0*sNfsM7_ipBZxprqO")))
+
+(ert-deftest org-clipper-localize/image-p-twitter-format-query ()
+  "A Twitter media URL is recognised via its format= query (and host)."
+  (should (org-clipper--image-url-p
+           "https://pbs.twimg.com/media/HJxkZ_wbEAAHWLa?format=jpg&name=large")))
+
+(ert-deftest org-clipper-localize/image-p-nextjs-proxy ()
+  "A Next.js image proxy wrapping a .png is an image."
+  (should (org-clipper--image-url-p
+           "https://www.anthropic.com/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F52a19d636c659cf4515dc0d7d70b8ceb1bbfd768-2200x1276.png&w=3840&q=75")))
+
+(ert-deftest org-clipper-localize/image-p-rejects-article-link ()
+  "A non-image article URL is not treated as an image."
+  (should-not (org-clipper--image-url-p
+               "https://blog.roboflow.com/how-to-deploy-rf-detr-to-an-nvidia-jetson/")))
+
+(ert-deftest org-clipper-localize/image-p-rejects-youtube ()
+  "A YouTube watch URL is not treated as an image."
+  (should-not (org-clipper--image-url-p
+               "https://www.youtube.com/watch?v=-OvpdLAElFA")))
+
+;;;; org-clipper--content-type-extension : Content-Type header → extension ----
+
+(ert-deftest org-clipper-localize/ext-jpeg ()
+  (should (equal (org-clipper--content-type-extension "image/jpeg") "jpg")))
+
+(ert-deftest org-clipper-localize/ext-strips-params-and-case ()
+  "Parameters after `;' are dropped and matching is case-insensitive."
+  (should (equal (org-clipper--content-type-extension "IMAGE/PNG; charset=binary") "png")))
+
+(ert-deftest org-clipper-localize/ext-webp ()
+  (should (equal (org-clipper--content-type-extension "image/webp") "webp")))
+
+(ert-deftest org-clipper-localize/ext-svg ()
+  (should (equal (org-clipper--content-type-extension "image/svg+xml") "svg")))
+
+(ert-deftest org-clipper-localize/ext-nonimage-nil ()
+  "A non-image Content-Type yields nil (used as the fetch guard)."
+  (should-not (org-clipper--content-type-extension "text/html; charset=utf-8")))
+
+(ert-deftest org-clipper-localize/ext-nil-input ()
+  (should-not (org-clipper--content-type-extension nil)))
+
+;;;; Regression: match-data hygiene + link collection -----------------------
+;;;; The first run placed every attachment marker at buffer position 1 because
+;;;; `org-clipper--image-url-p' calls `string-match' internally (via
+;;;; `--image-source-url'), clobbering the buffer match data the collection
+;;;; loop read immediately afterwards.
+
+(ert-deftest org-clipper-localize/image-url-p-preserves-match-data ()
+  "The predicate must not disturb the caller's match data."
+  (with-temp-buffer
+    (insert "see [[https://miro.medium.com/v2/0*abc]] here")
+    (goto-char (point-min))
+    (should (re-search-forward "\\[\\[\\(https?://[^][]+\\)\\]\\]" nil t))
+    (let ((mb (match-beginning 0)) (me (match-end 0)))
+      (org-clipper--image-url-p (match-string-no-properties 1))
+      (should (= (match-beginning 0) mb))
+      (should (= (match-end 0) me)))))
+
+(ert-deftest org-clipper-localize/collect-finds-links-at-correct-positions ()
+  "Collected links carry the buffer span of the real link, not a stale
+position left behind by the image predicate."
+  (with-temp-buffer
+    (insert "* Heading\nintro text\nsee [[https://miro.medium.com/v2/0*abc]] end\n")
+    (let* ((links (org-clipper--collect-image-links (point-min) (point-max)))
+           (link  (car links)))
+      (should (= (length links) 1))
+      (should (equal (nth 0 link) "https://miro.medium.com/v2/0*abc"))
+      (should (> (nth 1 link) 10))      ; not clamped to position 1
+      (should (string-prefix-p "[[https"
+                               (buffer-substring (nth 1 link) (nth 2 link)))))))
+
+(ert-deftest org-clipper-localize/collect-skips-described-links ()
+  "Reference links `[[url][desc]]' are not image candidates."
+  (with-temp-buffer
+    (insert "* H\n[[https://pbs.twimg.com/media/x?format=jpg][a photo]] and "
+            "[[https://example.com/article]]\n")
+    (should (null (org-clipper--collect-image-links (point-min) (point-max))))))
+
+(ert-deftest org-clipper-localize/collect-markers-track-edits ()
+  "Collected spans must track buffer edits, so rewriting an earlier link
+does not shift a later link off target — the file-corruption regression
+where lazily-made markers read stale positions and mangled the file."
+  (with-temp-buffer
+    (insert "* H\n[[https://a.com/1.png]] AAAtext "
+            "[[https://b.com/2.png]] BBBtext\n")
+    (let* ((links (org-clipper--collect-image-links (point-min) (point-max)))
+           (l1 (nth 0 links)) (l2 (nth 1 links)))
+      (should (= (length links) 2))
+      ;; Rewrite the FIRST link to a much longer string.
+      (goto-char (nth 1 l1))
+      (delete-region (nth 1 l1) (nth 2 l1))
+      (insert "[[attachment:a-very-long-replacement-name.png]]")
+      ;; The SECOND link's recorded span must still bracket exactly its link.
+      (should (equal (buffer-substring (nth 1 l2) (nth 2 l2))
+                     "[[https://b.com/2.png]]")))))
