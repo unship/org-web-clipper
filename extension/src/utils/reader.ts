@@ -274,7 +274,7 @@ export class Reader {
 				if (action === 'copyToClipboard') {
 					const originalText = itemLabel.textContent;
 					if (Reader.isReaderPage) {
-						Reader.copyMarkdownOnReaderPage(doc);
+						await Reader.copyMarkdownOnReaderPage(doc);
 					} else {
 						browser.runtime.sendMessage({ action: 'copyMarkdownToClipboard' });
 					}
@@ -283,7 +283,7 @@ export class Reader {
 				} else if (action === 'saveFile') {
 					clipDropdown.classList.remove('is-open');
 					if (Reader.isReaderPage) {
-						Reader.saveMarkdownOnReaderPage(doc);
+						await Reader.saveMarkdownOnReaderPage(doc);
 					} else {
 						browser.runtime.sendMessage({ action: 'saveMarkdownToFile' });
 					}
@@ -2745,9 +2745,9 @@ export class Reader {
 		container.addEventListener('animationend', () => hl().repositionHighlights(), { once: true });
 	}
 
-	static copyMarkdownOnReaderPage(doc: Document): void {
+	static async copyMarkdownOnReaderPage(doc: Document): Promise<void> {
 		try {
-			const defuddled = parseForClip(doc);
+			const defuddled = await parseForClip(doc);
 			const markdown = createMarkdownContent(defuddled.content, doc.URL);
 			navigator.clipboard.writeText(markdown).catch(() => {
 				const textArea = doc.createElement('textarea');
@@ -2764,7 +2764,7 @@ export class Reader {
 
 	static async saveMarkdownOnReaderPage(doc: Document): Promise<void> {
 		try {
-			const defuddled = parseForClip(doc);
+			const defuddled = await parseForClip(doc);
 			const markdown = createMarkdownContent(defuddled.content, doc.URL);
 			const title = defuddled.title || doc.title || 'Untitled';
 			const fileName = title.replace(/[/\\?%*:|"<>]/g, '-');
