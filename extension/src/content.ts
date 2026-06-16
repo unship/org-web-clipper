@@ -12,6 +12,7 @@ import { saveFile } from './utils/file-utils';
 import { debugLog } from './utils/debug';
 import { updateSidebarWidth, addResizeHandle, cleanupResizeHandlers } from './utils/iframe-resize';
 import { parseForClip } from './utils/clip-utils';
+import { convertSvgsToImages } from './utils/svg-converter';
 
 declare global {
 	interface Window {
@@ -210,6 +211,12 @@ declare global {
 					div.appendChild(clonedSelection);
 					selectedHtml = serializeChildren(div);
 				}
+
+				// Rasterize inline SVG diagrams before parsing so they survive the
+				// Markdown/Org export instead of being dropped as raw SVG code: static
+				// SVGs become PNGs, animated (SMIL) ones become GIFs. Best-effort —
+				// never blocks the clip if a conversion fails.
+				await convertSvgsToImages(document);
 
 				// Use parseAsync to ensure async variables like {{transcript}} are available.
 				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
