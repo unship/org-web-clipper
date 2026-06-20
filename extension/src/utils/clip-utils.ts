@@ -16,9 +16,12 @@ export async function parseForClip(doc: Document) {
 				...Array.from(readerArticle.childNodes).map(n => readerDoc.importNode(n, true))
 			);
 		}
-		await convertSvgsToImages(readerDoc);
-		return new Defuddle(readerDoc, { url: '' }).parse();
+		// readerDoc is a throwaway copy; rasterize and parse the returned document.
+		const readerParseDoc = await convertSvgsToImages(readerDoc);
+		return new Defuddle(readerParseDoc, { url: '' }).parse();
 	}
-	await convertSvgsToImages(doc);
-	return new Defuddle(doc, { url: doc.URL }).parse();
+	// Rasterize SVGs into a CLONE and parse that — parseForClip never modifies the
+	// live page (convertSvgsToImages returns the original doc when nothing converts).
+	const parseDoc = await convertSvgsToImages(doc);
+	return new Defuddle(parseDoc, { url: doc.URL }).parse();
 }

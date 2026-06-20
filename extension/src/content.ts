@@ -217,12 +217,14 @@ declare global {
 				// Rasterize inline SVG diagrams before parsing so they survive the
 				// Markdown/Org export instead of being dropped as raw SVG code: static
 				// SVGs become PNGs, animated (SMIL) ones become GIFs. Best-effort —
-				// never blocks the clip if a conversion fails.
-				await convertSvgsToImages(document);
+				// never blocks the clip if a conversion fails. This works on a CLONE and
+				// returns the document to parse, so the live page is never modified;
+				// `parseDoc` is that clone, or the untouched original when nothing converted.
+				const parseDoc = await convertSvgsToImages(document);
 
 				// Use parseAsync to ensure async variables like {{transcript}} are available.
 				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
-				const defuddle = new Defuddle(document, { url: document.URL });
+				const defuddle = new Defuddle(parseDoc, { url: document.URL });
 				const parseTimeout = new Promise<never>((_, reject) =>
 					setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
 				);

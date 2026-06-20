@@ -396,7 +396,8 @@ async function convertAnimated(svg: Element, size: Size, anims: AnimEl[]): Promi
 
 // ---- entry point -----------------------------------------------------------
 
-function replaceWithImage(doc: Document, svg: Element, dataUrl: string, size: Size): void {
+// Build the replacement <img> for a rasterized SVG, created in the target document.
+function buildImage(doc: Document, svg: Element, dataUrl: string, size: Size): HTMLImageElement {
   const img = doc.createElement('img');
   img.src = dataUrl;
   img.alt = svg.getAttribute('aria-label') || svg.getAttribute('title')
@@ -405,30 +406,59 @@ function replaceWithImage(doc: Document, svg: Element, dataUrl: string, size: Si
   img.setAttribute('height', String(Math.round(size.height)));
   img.style.maxWidth = '100%';
   img.style.height = 'auto';
-  svg.replaceWith(img);
+  return img;
 }
 
-export async function convertSvgsToImages(doc: Document): Promise<void> {
-  if (typeof document === 'undefined') return; // no canvas/Image (e.g. service worker / SSR)
+// Rasterize inline SVGs for clipping WITHOUT mutating the page the user sees.
+//
+// Returns the document the caller should hand to the parser:
+//   - if any SVG was rasterized, a detached CLONE of `liveDoc` with those <svg>s
+//     swapped for <img>s — the live document is never modified;
+//   - otherwise `liveDoc` itself, so Defuddle keeps full fidelity (live CSSOM:
+//     @media filtering, table sizing) on the common no-SVG path.
+//
+// Geometry and computed styles are always read from the LIVE <svg> (its rendered
+// size and external CSS only exist on the attached element), but every swap
+// happens on the clone. Reads are non-destructive, so the page is left exactly as
+// found. (Animated SVGs additionally measure motion-path length against the live
+// element through a synchronous, self-reverting temp node — see pointOnPath —
+// which completes before any repaint, so the live DOM still nets out unchanged.)
+export async function convertSvgsToImages(liveDoc: Document): Promise<Document> {
+  if (typeof document === 'undefined') return liveDoc; // no canvas/Image (e.g. service worker / SSR)
 
-  const svgs = Array.from(doc.querySelectorAll('svg'));
-  if (svgs.length === 0) return;
+  const liveSvgs = Array.from(liveDoc.querySelectorAll('svg'));
+  if (liveSvgs.length === 0) return liveDoc;
 
+  // Work on a detached clone; we only ever swap nodes in here, never in liveDoc.
+  // querySelectorAll order is identical between the faithful clone and the
+  // original, so live/clone SVGs can be paired by index.
+  const outDoc = liveDoc.cloneNode(true) as Document;
+  const outSvgs = Array.from(outDoc.querySelectorAll('svg'));
+
+  let converted = false;
   const startedAt = Date.now();
 
   // Sequential: GIF encoding is CPU-heavy and motion paths share the live host.
-  for (const svg of svgs) {
+  for (let i = 0; i < liveSvgs.length; i++) {
     if (Date.now() - startedAt > CONVERSION_BUDGET_MS) break; // leave the rest as-is
+    const liveSvg = liveSvgs[i];
+    const outSvg = outSvgs[i];
+    if (!outSvg) continue;
     try {
-      const size = getSvgSize(svg);
+      const size = getSvgSize(liveSvg); // measured from live layout/CSS
       if (Math.max(size.width, size.height) < MIN_RENDER_DIMENSION) continue; // icon, skip
-      const anims = collectAnimations(svg);
+      const anims = collectAnimations(liveSvg);
       const dataUrl = anims.length > 0
-        ? (await convertAnimated(svg, size, anims)) ?? (await convertStatic(svg, size))
-        : await convertStatic(svg, size);
-      if (dataUrl) replaceWithImage(doc, svg, dataUrl, size);
+        ? (await convertAnimated(liveSvg, size, anims)) ?? (await convertStatic(liveSvg, size))
+        : await convertStatic(liveSvg, size);
+      if (dataUrl) {
+        outSvg.replaceWith(buildImage(outDoc, liveSvg, dataUrl, size));
+        converted = true;
+      }
     } catch {
-      // Leave the original SVG in place on any failure.
+      // Leave the clone's original SVG in place on any failure.
     }
   }
+
+  return converted ? outDoc : liveDoc;
 }
