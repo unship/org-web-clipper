@@ -13,6 +13,7 @@ import { debugLog } from './utils/debug';
 import { updateSidebarWidth, addResizeHandle, cleanupResizeHandlers } from './utils/iframe-resize';
 import { parseForClip } from './utils/clip-utils';
 import { convertSvgsToImages } from './utils/svg-converter';
+import { normalizeTableSpans } from './utils/table-normalizer';
 
 declare global {
 	interface Window {
@@ -156,8 +157,9 @@ declare global {
 				try {
 					const defuddled = await parseForClip(document);
 
-					// Convert HTML content to markdown
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
+					// Convert HTML content to markdown (expand colspan/rowspan tables
+					// first so Defuddle emits a real Markdown table, not raw HTML).
+					const markdown = createMarkdownContent(normalizeTableSpans(defuddled.content), document.URL);
 
 					// Copy to clipboard
 					const textArea = document.createElement("textarea");
@@ -180,7 +182,7 @@ declare global {
 			flattenShadowDom(document).then(async () => {
 				try {
 					const defuddled = await parseForClip(document);
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
+					const markdown = createMarkdownContent(normalizeTableSpans(defuddled.content), document.URL);
 					const title = defuddled.title || document.title || 'Untitled';
 					const fileName = title.replace(/[/\\?%*:|"<>]/g, '-');
 					await saveFile({

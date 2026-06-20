@@ -1,5 +1,6 @@
 import { ExtractedContent } from '../types/types';
 import { createMarkdownContent } from 'defuddle/full';
+import { normalizeTableSpans } from './table-normalizer';
 import { sanitizeFileName } from './string-utils';
 import { buildVariables, addSchemaOrgDataToVariables } from './shared';
 import browser from './browser-polyfill';
@@ -149,7 +150,7 @@ export async function initializePageContent(
 		let selectedMarkdown = '';
 		if (selectedHtml) {
 			content = selectedHtml;
-			selectedMarkdown = createMarkdownContent(selectedHtml, currentUrl);
+			selectedMarkdown = createMarkdownContent(normalizeTableSpans(selectedHtml), currentUrl);
 		}
 
 		// Process highlights after getting the base content
@@ -157,9 +158,12 @@ export async function initializePageContent(
 			content = processHighlights(content, highlights);
 		}
 
-		const markdownBody = createMarkdownContent(content, currentUrl);
+		// Expand any colspan/rowspan tables so Defuddle emits a real Markdown
+		// table (and md-to-org an Org table) instead of dumping raw <table> HTML.
+		// contentHtml below intentionally keeps the original markup.
+		const markdownBody = createMarkdownContent(normalizeTableSpans(content), currentUrl);
 
-		const highlightsData = collapseGroupsForExport(highlights, c => createMarkdownContent(c, currentUrl));
+		const highlightsData = collapseGroupsForExport(highlights, c => createMarkdownContent(normalizeTableSpans(c), currentUrl));
 
 		const noteName = sanitizeFileName(title);
 
