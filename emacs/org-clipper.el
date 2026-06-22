@@ -266,17 +266,31 @@ of successfully-written images; failures are skipped."
 
 (defun org-clipper--rewrite-image-links (map)
   "In the current subtree, rewrite [[URL]] and [[URL][desc]] to
-[[attachment:FILE]] for each (URL . FILE) in MAP."
+[[attachment:FILE]] for each (URL . FILE) in MAP.
+The URL is located with a literal `search-forward', never a
+`regexp-quote'd pattern: a rasterized inline SVG (or any inline image)
+arrives as a `data:...;base64,' URL that is easily tens of KB to several
+MB, and compiling that into a regexp overflows Emacs's pattern-size limit
+\(signalling `invalid-regexp' \"Regular expression too big\").  Only the
+small, constant link tail \(an optional `][desc]' before the closing
+`]]') is matched as a regexp."
   (save-excursion
     (save-restriction
       (org-back-to-heading t)
       (org-narrow-to-subtree)
       (dolist (pair map)
-        (goto-char (point-min))
-        (while (re-search-forward
-                (concat "\\[\\[" (regexp-quote (car pair)) "\\(?:\\]\\[[^]]*\\)?\\]\\]")
-                nil t)
-          (replace-match (concat "[[attachment:" (cdr pair) "]]") t t))))))
+        (let ((needle (concat "[[" (car pair)))
+              (repl   (concat "[[attachment:" (cdr pair) "]]")))
+          (goto-char (point-min))
+          (while (search-forward needle nil t)
+            ;; Point now sits just past the URL.  Accept the bare `]]' close
+            ;; or an optional `][desc]' first; both forms span from the `[['
+            ;; (BEG) to the end of this constant tail match.
+            (let ((beg (match-beginning 0)))
+              (when (looking-at "\\(?:\\]\\[[^]]*\\)?\\]\\]")
+                (delete-region beg (match-end 0))
+                (goto-char beg)
+                (insert repl)))))))))
 
 (defun org-clipper--sanitize-text (s)
   "Return string S stripped of bytes that force Org to be saved as *raw-text*.
@@ -740,14 +754,19 @@ URL has a `format=<imgext>' query (Twitter media), or the host is a known
 image CDN/proxy.  The Content-Type check at download time is the final
 authority; this only avoids fetching obvious non-images (article links)."
   (require 'url-parse)
-  (save-match-data                    ; `--image-source-url' uses `string-match'
-    (let* ((src  (org-clipper--image-source-url url))
-           (path (car (url-path-and-query (url-generic-parse-url src))))
-           (case-fold-search t))
-      (or (string-match-p org-clipper--image-extension-re (or path ""))
-          (string-match-p "[?&]format=\\(?:png\\|jpe?g\\|gif\\|webp\\|avif\\)\\b" url)
-          (string-match-p "\\`https?://\\(?:pbs\\.twimg\\.com\\|miro\\.medium\\.com\\|[^/]*\\.substackcdn\\.com\\)/" url)
-          (string-match-p "/_next/image\\?" url)))))
+  (or
+   ;; Inline data image: definitionally an image.  Checked first so a
+   ;; megabyte-long URL never reaches `--image-source-url' (which url-unhexes
+   ;; the whole string).
+   (string-prefix-p "data:image/" url)
+   (save-match-data                    ; `--image-source-url' uses `string-match'
+     (let* ((src  (org-clipper--image-source-url url))
+            (path (car (url-path-and-query (url-generic-parse-url src))))
+            (case-fold-search t))
+       (or (string-match-p org-clipper--image-extension-re (or path ""))
+           (string-match-p "[?&]format=\\(?:png\\|jpe?g\\|gif\\|webp\\|avif\\)\\b" url)
+           (string-match-p "\\`https?://\\(?:pbs\\.twimg\\.com\\|miro\\.medium\\.com\\|[^/]*\\.substackcdn\\.com\\)/" url)
+           (string-match-p "/_next/image\\?" url))))))
 
 (defun org-clipper--content-type-extension (content-type)
   "Map an HTTP CONTENT-TYPE header value to a file extension, or nil.
@@ -804,6 +823,41 @@ sensitive CDNs cooperate."
                   (cons ctype tmp)))))
         (kill-buffer buf)))))
 
+(defun org-clipper--abbrev-url (url &optional n)
+  "URL truncated to N characters (default 70) for logging.
+A clipped `data:' URL can be megabytes long; never echo it whole."
+  (let ((n (or n 70)))
+    (if (and (stringp url) (> (length url) n)) (concat (substring url 0 n) "…") url)))
+
+(defun org-clipper--data-url-to-tempfile (url)
+  "Decode a base64 `data:' URL into a temp file, with NO network access.
+Return (CONTENT-TYPE . TEMPFILE) on success, else nil — for a non-`data:'
+URL, a non-base64 (percent-encoded) one, or any decode failure.  This is
+the inline-image counterpart to `org-clipper--download-image': both yield
+the same shape so the localize loop treats them identically."
+  (save-match-data
+    (when (string-prefix-p "data:" url)
+      (let ((comma (string-match "," url)))
+        (when comma
+          (let* ((meta (substring url 5 comma))     ; e.g. "image/png;base64"
+                 (ct   (car (split-string meta ";"))))   ; "image/png"
+            (when (string-match-p ";base64" meta)
+              (ignore-errors
+                (let ((bytes (base64-decode-string (substring url (1+ comma))))
+                      (tmp   (make-temp-file "oclr-data-"))
+                      (coding-system-for-write 'binary))
+                  (with-temp-file tmp
+                    (set-buffer-multibyte nil)
+                    (insert bytes))
+                  (cons ct tmp))))))))))
+
+(defun org-clipper--acquire-image (url)
+  "Obtain image bytes for URL as (CONTENT-TYPE . TEMPFILE), or nil.
+Inline `data:' URLs are decoded locally; everything else is downloaded."
+  (if (string-prefix-p "data:" url)
+      (org-clipper--data-url-to-tempfile url)
+    (org-clipper--download-image url)))
+
 (defun org-clipper--collect-image-links (beg end)
   "Return a list of (URL START END) for bare remote image links between
 BEG and END in the current buffer, in buffer order.  START and END are
@@ -815,7 +869,7 @@ buffer positions are read before the image predicate runs, so its internal
   (let ((acc '()))
     (save-excursion
       (goto-char beg)
-      (while (re-search-forward "\\[\\[\\(https?://[^][]+\\)\\]\\]" end t)
+      (while (re-search-forward "\\[\\[\\(\\(?:https?://\\|data:\\)[^][]+\\)\\]\\]" end t)
         (let ((url (match-string-no-properties 1))
               (mb  (match-beginning 0))
               (me  (match-end 0)))
@@ -825,13 +879,19 @@ buffer positions are read before the image predicate runs, so its internal
 
 ;;;###autoload
 (defun org-clipper-localize-remote-images (&optional beg end)
-  "Download bare remote image links and turn them into org attachments.
+  "Turn bare inline image links into org attachments.
 
-Scan the buffer (or the active region BEG..END) for *bare* `[[https://…]]'
-links that resolve to images — `[[url][desc]]' reference links are left
-alone — download each, attach it to the surrounding entry (its inherited
-ID-bucketed `org-attach' dir, matching the repo's `[[attachment:…]]'
-convention), and rewrite the link to `[[attachment:FILE]]'.
+Scan the buffer (or the active region BEG..END) for *bare* image links —
+`[[url][desc]]' reference links are left alone — attach each to the
+surrounding entry (its inherited ID-bucketed `org-attach' dir, matching
+the repo's `[[attachment:…]]' convention), and rewrite the link to
+`[[attachment:FILE]]'.  Two link kinds are handled:
+
+  * `[[https://…]]' remote images — downloaded; and
+  * `[[data:image/…;base64,…]]' inline images — decoded locally (no
+    network).  This rescues a `data:' link already written into a file,
+    e.g. by a pre-fix failed clip; such links are also what makes
+    `org-element' \(and so Vulpea/org-roam) stack-overflow when long.
 
 Comprehensive: Twitter media, Next.js image proxies and extension-less CDN
 images are handled, with the file extension taken from the response
@@ -852,15 +912,15 @@ listed in `*org-localize-remote-images*'.  Idempotent and safe to re-run;
       (let ((url  (nth 0 link))
             (mbeg (nth 1 link))         ; markers from collection; they track
             (mend (nth 2 link)))        ; edits, so later links stay on target
-        (message "org-clipper: localizing %s …" url)
+        (message "org-clipper: localizing %s …" (org-clipper--abbrev-url url))
         (condition-case err
-            (let ((dl (org-clipper--download-image url)))
+            (let ((dl (org-clipper--acquire-image url)))
               (cond
-               ((null dl) (push (cons url "download failed") skipped))
+               ((null dl) (push (cons (org-clipper--abbrev-url url) "could not read image") skipped))
                ((not (org-clipper--content-type-extension (car dl)))
                 (ignore-errors (delete-file (cdr dl)))
-                (push (cons url (format "not an image (%s)"
-                                        (or (car dl) "no Content-Type")))
+                (push (cons (org-clipper--abbrev-url url)
+                            (format "not an image (%s)" (or (car dl) "no Content-Type")))
                       skipped))
                (t
                 (let ((ext (org-clipper--content-type-extension (car dl)))
@@ -876,11 +936,14 @@ listed in `*org-localize-remote-images*'.  Idempotent and safe to re-run;
                                                 (directory-files dir nil "\\`[^.]"))
                                               h)
                                      (puthash f t h))))
-                           (stem (file-name-base
-                                  (or (car (url-path-and-query
-                                            (url-generic-parse-url
-                                             (org-clipper--image-source-url url))))
-                                      "")))
+                           ;; A `data:' URL has no meaningful path; never feed
+                           ;; the (possibly megabyte-long) string to the parser.
+                           (stem (if (string-prefix-p "data:" url) "image"
+                                   (file-name-base
+                                    (or (car (url-path-and-query
+                                              (url-generic-parse-url
+                                               (org-clipper--image-source-url url))))
+                                        ""))))
                            (stem (if (string-empty-p stem) "image" stem))
                            (name (org-clipper--attach-filename
                                   (concat stem "." ext) used))
@@ -891,7 +954,7 @@ listed in `*org-localize-remote-images*'.  Idempotent and safe to re-run;
                       (delete-region mbeg mend)
                       (insert (concat "[[attachment:" name "]]"))
                       (cl-incf n-done)))))))
-          (error (push (cons url (error-message-string err)) skipped)))
+          (error (push (cons (org-clipper--abbrev-url url) (error-message-string err)) skipped)))
         (set-marker mbeg nil)
         (set-marker mend nil)))
     (when (derived-mode-p 'org-mode)

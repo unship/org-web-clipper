@@ -319,6 +319,28 @@
            (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))        ; embedded
            (should (string-match-p "\\[\\[https://x/missing.png\\]\\]" s))))))))  ; unmapped stays remote
 
+;; Regression: a clipped inline SVG rasterizes to a `data:image/...;base64,'
+;; URL that is easily tens of KB to several MB.  Rewriting it must NOT build a
+;; `regexp-quote'd pattern from the URL: Emacs's compiled-pattern limit is well
+;; under 50 KB, so that signals `invalid-regexp' ("Regular expression too big"),
+;; which the HTTP handler surfaces as `HTTP 500'.  Use a literal search instead.
+(ert-deftest org-clipper-test-insert-clip-rewrites-long-data-uri-image ()
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (let* ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
+            ;; 60 KB data URL — past the compiled-pattern limit (~32-50 KB).
+            (url (concat "data:image/png;base64," (make-string 60000 ?A))))
+       (org-clipper--insert-clip
+        (list :title "T" :url "u"
+              :body (concat "see [[" url "]] here")
+              :images (list (list :url url :filename "img.png"
+                                  :contentType "image/png" :dataBase64 org-clipper-test--png))))
+       (with-temp-buffer
+         (insert-file-contents tmp)
+         (let ((s (buffer-string)))
+           (should (string-match-p "\\[\\[attachment:img.png\\]\\]" s))   ; rewritten
+           (should-not (string-match-p "data:image/png" s))))))))          ; inline data URL gone
+
 ;; Regression: the HTTP handler must thread :images from the JSON payload
 ;; through to --insert-clip so links are actually rewritten.  A direct
 ;; --insert-clip call masks a dropped :images key in --http-handle.
@@ -507,3 +529,60 @@ where lazily-made markers read stale positions and mangled the file."
       ;; The SECOND link's recorded span must still bracket exactly its link.
       (should (equal (buffer-substring (nth 1 l2) (nth 2 l2))
                      "[[https://b.com/2.png]]")))))
+
+;;;; data: URL localization (inline base64 images -> attachments) -----------
+;;;; The clip path already rewrites inline `data:' images to attachments at
+;;;; capture time.  The SAME `localize' command must also rescue a `data:' link
+;;;; already sitting in a file (e.g. left by a pre-fix failed clip that 500'd
+;;;; mid-rewrite): decode the base64 locally (no network) and never
+;;;; `regexp-quote' the megabyte-long URL.
+
+(ert-deftest org-clipper-localize/data-url-decodes-base64 ()
+  (let ((r (org-clipper--data-url-to-tempfile
+            (concat "data:image/png;base64," org-clipper-test--png))))
+    (should (equal (car r) "image/png"))
+    (should (file-exists-p (cdr r)))
+    (unwind-protect
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (insert-file-contents-literally (cdr r))
+          (should (equal (buffer-substring 2 5) "PNG")))   ; PNG magic after 0x89
+      (delete-file (cdr r)))))
+
+(ert-deftest org-clipper-localize/data-url-rejects-non-base64-and-non-data ()
+  ;; Non-base64 data: (percent-encoded) and ordinary URLs are not our job here.
+  (should-not (org-clipper--data-url-to-tempfile "data:image/svg+xml,%3Csvg%3E"))
+  (should-not (org-clipper--data-url-to-tempfile "https://x/a.png")))
+
+(ert-deftest org-clipper-localize/image-p-accepts-data-image ()
+  (should (org-clipper--image-url-p (concat "data:image/png;base64," org-clipper-test--png)))
+  (should (org-clipper--image-url-p "data:image/gif;base64,AAAA")))
+
+(ert-deftest org-clipper-localize/collect-finds-large-data-link-without-overflow ()
+  "A multi-hundred-KB inline `data:' link (the size that makes `org-element'
+stack-overflow) must still be collected, with its true buffer span."
+  (with-temp-buffer
+    (insert "* H\nbefore [[data:image/png;base64," (make-string 200000 ?A) "]] after\n")
+    (let ((links (org-clipper--collect-image-links (point-min) (point-max))))
+      (should (= (length links) 1))
+      (should (string-prefix-p "data:image/png;base64,AAAA" (nth 0 (car links))))
+      (should (string-prefix-p "[[data:" (buffer-substring (nth 1 (car links))
+                                                           (+ 7 (nth 1 (car links)))))))))
+
+(ert-deftest org-clipper-localize/localize-rewrites-inline-data-image ()
+  "End-to-end: an inline base64 `data:' image is decoded, attached, and the
+link rewritten to [[attachment:FILE]] — with no network access."
+  (org-clipper-test--with-target
+   (lambda (tmp)
+     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
+       (with-current-buffer (find-file-noselect tmp)
+         (let ((org-mode-hook nil)) (org-mode))
+         (goto-char (point-max))
+         (insert "* clip\n:PROPERTIES:\n:ID: oc-data-test\n:END:\n"
+                 "see [[data:image/png;base64," org-clipper-test--png "]] here\n")
+         (org-clipper-localize-remote-images (point-min) (point-max))
+         (let ((s (buffer-string)))
+           (should (string-match-p "\\[\\[attachment:image\\.png\\]\\]" s))
+           (should-not (string-match-p "data:image/png" s)))
+         (set-buffer-modified-p nil)
+         (kill-buffer))))))
