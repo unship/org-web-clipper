@@ -135,6 +135,22 @@ some body
               (should (string-match-p "^\\* sec$" s)))))         ; body re-leveled
       (delete-directory root t))))
 
+(ert-deftest org-clipper-migrate-test-write-no-created-aligns-bucket-and-stamp ()
+  ;; With no :CREATED:, the drawer date must equal the path's date bucket.
+  (let* ((root (make-temp-file "oc-mig-nc-" t))
+         (org-clipper-clip-root root))
+    (unwind-protect
+        (let* ((path (org-clipper-migrate--write-clip
+                      (list :id "x" :url "https://x/p" :title "No Created" :body "b")))
+               (path-date (and (string-match "/\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)/[^/]+\\.org\\'" path)
+                               (match-string 1 path))))
+          (with-temp-buffer
+            (insert-file-contents path)
+            (should (string-match "^:CREATED: <\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)"
+                                  (buffer-string)))
+            (should (equal (match-string 1 (buffer-string)) path-date))))
+      (delete-directory root t))))
+
 (ert-deftest org-clipper-migrate-test-collect-prefers-inbox-on-dup ()
   ;; Same URL in inbox and llvim: inbox wins, llvim dropped.
   (let* ((inbox (make-temp-file "oc-mig-ci-" t))

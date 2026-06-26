@@ -166,6 +166,12 @@ when the heading drawer lacks them."
 Buckets by `:CREATED:'; copies the body (and any image links) verbatim."
   (let* ((id (or (plist-get clip :id) (org-id-new)))
          (time (org-clipper-migrate--created-time clip))
+         ;; When the clip carries no parseable :CREATED:, stamp it from the same
+         ;; TIME used to bucket the file, so the drawer date and the path agree.
+         (clip (if (org-clipper-migrate--date-time (plist-get clip :created))
+                   clip
+                 (plist-put (copy-sequence clip) :created
+                            (format-time-string "%Y-%m-%d %a" time))))
          (tags (org-clipper--merge-tags (plist-get clip :tags)))
          (path (org-clipper--clip-file-path (plist-get clip :title)
                                             (plist-get clip :url) time))
