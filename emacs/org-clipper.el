@@ -1,7 +1,7 @@
 ;;; org-clipper.el --- Emacs companion for the org-clipper Chrome extension  -*- lexical-binding: t; -*-
 
 ;; Author: org-clipper contributors
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "27.1") (org "9.3"))
 ;; Keywords: hypermedia, org
 ;; URL: https://github.com/ed/org-clipper
@@ -13,19 +13,27 @@
 ;;
 ;;     org-protocol://org-clipper?template=KEY&url=URL&title=TITLE&body=BODY&...
 ;;
-;; URLs.  Provided you have `org-protocol' loaded and Emacs registered as
-;; the OS handler for the `org-protocol' scheme, Emacs receives the URL,
-;; decodes its parameters, and inserts the clip via the shared capture
-;; core `org-clipper--insert-clip' -- a full Obsidian-parity metadata
-;; drawer (`:ID:'/`:SOURCE:'/`:AUTHOR:'/`:PUBLISHED:'/`:CREATED:'/
-;; `:DESCRIPTION:') is written and the entry is prepended under
-;; `org-clipper-target-headline'.  No `org-capture' machinery is used.
+;; URLs (or POSTing JSON to the local HTTP endpoint).  Each clip becomes its
+;; own file -- a file-level vulpea node -- under a date bucket:
+;;
+;;     <org-clipper-clip-root>/YYYY-MM/YYYY-MM-DD/<slug>.org
+;;
+;; The file carries a top `:PROPERTIES:' drawer (`:ID:'/`:SOURCE:'/`:AUTHOR:'/
+;; `:PUBLISHED:'/`:CREATED:'/`:DESCRIPTION:' + extra template props), a
+;; `#+title:' and `#+filetags:', then the converted body.  There is no shared
+;; `* Web clips' grouping heading; the file IS the node.  No `org-capture'
+;; machinery is used.
+;;
+;; Before writing, the page's URL is looked up in vulpea by `:SOURCE:'.  If it
+;; was already clipped, nothing is written and the existing file's path
+;; (relative to `org-directory') is reported -- over the HTTP response (the
+;; browser popup shows "Already clipped -> …") or as an Emacs message.
 ;;
 ;; This package adds:
 ;;
-;;   * `org-clipper-target-file' - file clips are inserted into;
-;;   * `org-clipper-visit-target' - jump to it, with `auto-revert-mode';
-;;   * `org-clipper-refile' - refile the most recent clip elsewhere.
+;;   * `org-clipper-clip-root' - directory clips are bucketed under;
+;;   * `org-clipper-visit-target' - open the clip root in Dired;
+;;   * `org-clipper-refile' - refile the current clip elsewhere.
 ;;
 ;; The package registers its own `org-clipper' `org-protocol'
 ;; sub-protocol (the extension's `transport' must match
@@ -49,25 +57,26 @@
 (defcustom org-clipper-target-file
   (expand-file-name "inbox.org"
                     (or (bound-and-true-p org-directory) "~/org"))
-  "Org file clips are inserted into.
-When nil, a monthly file under `org-clipper-monthly-dir' is used instead."
+  "Deprecated.  Unused since clips became one file per page (see
+`org-clipper-clip-root').  Kept defined so existing user configuration that
+sets it does not error."
   :type 'file
   :group 'org-clipper)
 
 (defcustom org-clipper-target-headline "Web clips"
-  "Heading under which clips are filed."
+  "Deprecated.  No longer used: clips are one file per page with no shared
+grouping heading.  Kept defined for backward compatibility."
   :type 'string
   :group 'org-clipper)
 
 (defcustom org-clipper-auto-revert t
-  "When non-nil, enable `auto-revert-mode' on the target file when it
-is visited via `org-clipper-visit-target', so new clips appear without
-manual `g'."
+  "When non-nil, enable `auto-revert-mode' on a clip file when it is visited
+via `org-clipper-visit-target'."
   :type 'boolean
   :group 'org-clipper)
 
 (defcustom org-clipper-default-tags '("clippings")
-  "Tags always merged into every clip's headline (newest-first order preserved)."
+  "Tags always merged into every clip (newest-first order preserved)."
   :type '(repeat string)
   :group 'org-clipper)
 
@@ -129,17 +138,24 @@ left untouched."
        (t (push ln out))))
     (mapconcat #'identity (nreverse out) "\n")))
 
-(defun org-clipper--format-entry (level title tags clip)
-  "Return the Org entry text for CLIP at heading LEVEL. No :ID: yet (added
-after insertion).  Empty optional properties are omitted.  TAGS is a list."
+(defun org-clipper--clip-file-content (id title url tags clip)
+  "Return the full text of a one-file-per-clip Org node.
+
+A file-level vulpea node: a top `:PROPERTIES:' drawer, then `#+title:',
+`#+filetags:', then CLIP's body re-leveled so its shallowest heading is
+level 1.  Drawer keys ID, SOURCE and AUTHOR are ALWAYS written (AUTHOR as an
+empty value when absent); CREATED is always written; PUBLISHED, DESCRIPTION
+and extra template properties are written only when non-empty.  TAGS is a
+list.  CLIP is the clip plist (see `org-clipper--insert-clip')."
   (let ((props '()))
-    (push (cons "SOURCE" (or (plist-get clip :url) "")) props)
-    (let ((author (plist-get clip :author)))
-      (when (and author (> (length (string-trim author)) 0))
-        (push (cons "AUTHOR" (string-trim author)) props)))
+    (push (cons "ID" id) props)
+    (push (cons "SOURCE" (or url "")) props)
+    ;; AUTHOR is always present (empty value when absent) for a uniform schema.
+    (push (cons "AUTHOR" (let ((a (plist-get clip :author)))
+                           (if a (string-trim a) "")))
+          props)
     (let ((published (org-clipper--published-stamp (plist-get clip :published))))
-      (when published
-        (push (cons "PUBLISHED" published) props)))
+      (when published (push (cons "PUBLISHED" published) props)))
     (push (cons "CREATED" (org-clipper--created-stamp (plist-get clip :created))) props)
     (let ((description (plist-get clip :description)))
       (when (and description (> (length (string-trim description)) 0))
@@ -158,50 +174,109 @@ after insertion).  Empty optional properties are omitted.  TAGS is a list."
                   props)))
         (setq extra (cddr extra))))
     (setq props (nreverse props))
-    (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") (1+ level))))
+    (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") 1)))
       (concat
-       (make-string level ?*) " " (string-trim (or title "(untitled)"))
-       (let ((ts (org-clipper--tags-string tags)))
-         (if (> (length ts) 0) (concat "  " ts) ""))
-       "\n:PROPERTIES:\n"
-       (mapconcat (lambda (kv) (format ":%s: %s" (car kv) (cdr kv))) props "\n")
-       "\n:END:\n\n"
+       ":PROPERTIES:\n"
+       (mapconcat (lambda (kv)
+                    (if (string-empty-p (cdr kv))
+                        (format ":%s:" (car kv))     ; empty value: no trailing space
+                      (format ":%s: %s" (car kv) (cdr kv))))
+                  props "\n")
+       "\n:END:\n"
+       "#+title: " (string-trim (or title "(untitled)")) "\n"
+       "#+filetags: " (org-clipper--tags-string tags) "\n"
+       "\n"
        (if (string-suffix-p "\n" body) body (concat body "\n"))))))
 
 
-;;; Target file + lean persistent buffer
+;;; Target directory + per-clip file path
 
 (defcustom org-clipper-monthly-dir
   (expand-file-name "inbox" (or (bound-and-true-p org-directory) "~/org"))
-  "Directory holding monthly clip files (YYYY-MM.org)."
+  "Deprecated alias kept for backward compatibility; see `org-clipper-clip-root'."
   :type 'directory :group 'org-clipper)
 
+(defcustom org-clipper-clip-root
+  (expand-file-name "inbox" (or (bound-and-true-p org-directory) "~/org"))
+  "Root directory under which clips are bucketed as YYYY-MM/YYYY-MM-DD/<slug>.org."
+  :type 'directory :group 'org-clipper)
+
+(defcustom org-clipper-filename-max-slug 80
+  "Maximum length (characters) of the slug used for a clip's file name."
+  :type 'integer :group 'org-clipper)
+
 (defcustom org-clipper-lean-capture t
-  "Open the clip target with `org-mode-hook' suppressed and keep it alive,
-so captures never re-run heavy org-mode setup or attach LSP/grammar tools."
+  "Open each clip file with `org-mode-hook' and `find-file-hook' suppressed,
+so captures never run heavy org-mode setup or attach LSP/grammar tools.
+Saving still runs normally, so vulpea/org-roam autosync is unaffected."
   :type 'boolean :group 'org-clipper)
 
-(defun org-clipper--current-target-file ()
-  "Absolute path the next clip lands in (override or monthly).  Makes its dir."
-  (let* ((path (if org-clipper-target-file
-                   (expand-file-name org-clipper-target-file)
-                 (expand-file-name (format-time-string "%Y-%m.org")
-                                   org-clipper-monthly-dir)))
-         (dir (file-name-directory path)))
+(defun org-clipper--slug (title url)
+  "Return a filesystem slug for TITLE (falling back to URL's host, then
+\"untitled\").  Unicode letters and digits are preserved (so CJK titles
+survive); every other run of characters collapses to a single hyphen.  The
+result is lowercased and truncated to `org-clipper-filename-max-slug' chars."
+  (let* ((s (downcase (string-trim (or title ""))))
+         (s (replace-regexp-in-string "[^[:alnum:]]+" "-" s))
+         (s (replace-regexp-in-string "\\`-+\\|-+\\'" "" s)))
+    (when (string-empty-p s)
+      (when (and url (string-match "\\`https?://\\([^/?#]+\\)" url))
+        (setq s (replace-regexp-in-string
+                 "\\`-+\\|-+\\'" ""
+                 (replace-regexp-in-string "[^[:alnum:]]+" "-"
+                                           (downcase (match-string 1 url)))))))
+    (when (string-empty-p s) (setq s "untitled"))
+    (when (> (length s) org-clipper-filename-max-slug)
+      (setq s (replace-regexp-in-string
+               "-+\\'" "" (substring s 0 org-clipper-filename-max-slug))))
+    (if (string-empty-p s) "untitled" s)))
+
+(defun org-clipper--bucket-dir (time)
+  "Return (creating if needed) the YYYY-MM/YYYY-MM-DD bucket dir under
+`org-clipper-clip-root' for TIME."
+  (let ((dir (expand-file-name
+              (concat (format-time-string "%Y-%m/%Y-%m-%d" time) "/")
+              org-clipper-clip-root)))
     (unless (file-directory-p dir) (make-directory dir t))
+    dir))
+
+(defun org-clipper--unique-clip-file (dir slug)
+  "Return an unused absolute path DIR/SLUG.org, suffixing -2, -3 … on collision."
+  (let ((path (expand-file-name (concat slug ".org") dir)) (n 1))
+    (while (file-exists-p path)
+      (setq n (1+ n)
+            path (expand-file-name (format "%s-%d.org" slug n) dir)))
     path))
 
-(defun org-clipper--capture-target-file ()
-  "Ensure the target file is visited in a lean, kept-alive buffer; return path.
-The lean open binds `org-mode-hook' AND `find-file-hook' to nil so heavy
-per-buffer setup (LSP/grammar tools, project/VCS scans, etc.) never runs on --
-or blocks the daemon at -- capture time.  Saving still runs normally, so e.g.
-org-roam/vulpea autosync is unaffected."
-  (let ((file (org-clipper--current-target-file)))
-    (when (and org-clipper-lean-capture (not (find-buffer-visiting file)))
-      (let ((org-mode-hook nil) (find-file-hook nil) (org-inhibit-startup t))
-        (find-file-noselect file)))
-    file))
+(defun org-clipper--clip-file-path (title url time)
+  "Absolute path the clip for TITLE/URL lands in, bucketed by TIME.  Makes dir."
+  (org-clipper--unique-clip-file (org-clipper--bucket-dir time)
+                                 (org-clipper--slug title url)))
+
+
+;;; Duplicate detection (vulpea, by :SOURCE:)
+
+(defvar org-clipper--clipped-this-session (make-hash-table :test 'equal)
+  "URL -> path (relative to `org-directory') for clips written this session.
+Covers the brief window before vulpea autosync indexes a freshly-saved clip,
+so two rapid clips of the same URL are still deduplicated.")
+
+(defun org-clipper--find-by-source (url)
+  "Return the absolute path of an existing clip whose `:SOURCE:' equals URL, nil
+otherwise.  Checks this session's just-clipped table first (covers autosync
+lag), then queries vulpea.  The `vulpea-db-query' scan is O(notes) (~0.4s at a
+few thousand notes) but runs at most once per clip; correctness is preferred
+over a fragile direct-SQL path."
+  (when (and url (> (length url) 0))
+    (or (let ((rel (gethash url org-clipper--clipped-this-session)))
+          (and rel (expand-file-name rel org-directory)))
+        (and (fboundp 'vulpea-db-query)
+             (let ((hit (seq-find
+                         (lambda (n)
+                           (equal url (cdr (assoc-string
+                                            "SOURCE" (vulpea-note-properties n)))))
+                         (vulpea-db-query))))
+               (and hit (vulpea-note-path hit)))))))
 
 
 ;;; Capture core
@@ -209,22 +284,8 @@ org-roam/vulpea autosync is unaffected."
 (require 'org-id)
 
 (defcustom org-clipper-prepend t
-  "When non-nil insert each clip as the FIRST child of the headline."
+  "Deprecated.  No effect now that each clip is its own file."
   :type 'boolean :group 'org-clipper)
-
-(defun org-clipper--goto-target-headline ()
-  "Move point to `org-clipper-target-headline', creating it if missing.
-Return its outline level."
-  (goto-char (point-min))
-  (let ((case-fold-search t))
-    (unless (re-search-forward
-             (format "^\\*+[ \t]+%s[ \t]*$" (regexp-quote org-clipper-target-headline))
-             nil t)
-      (goto-char (point-max))
-      (unless (bolp) (insert "\n"))
-      (insert "* " org-clipper-target-headline "\n"))
-    (beginning-of-line)
-    (when (looking-at "^\\*") (org-current-level))))
 
 (defun org-clipper--attach-filename (raw used)
   "A safe, unique filename for RAW given USED (hash of taken names)."
@@ -265,9 +326,10 @@ of successfully-written images; failures are skipped."
     (nreverse map)))
 
 (defun org-clipper--rewrite-image-links (map)
-  "In the current subtree, rewrite [[URL]] and [[URL][desc]] to
+  "In the current buffer, rewrite [[URL]] and [[URL][desc]] to
 [[attachment:FILE]] for each (URL . FILE) in MAP.
-The URL is located with a literal `search-forward', never a
+Operates buffer-wide: a one-file-per-clip node has no enclosing subtree to
+narrow to.  The URL is located with a literal `search-forward', never a
 `regexp-quote'd pattern: a rasterized inline SVG (or any inline image)
 arrives as a `data:...;base64,' URL that is easily tens of KB to several
 MB, and compiling that into a regexp overflows Emacs's pattern-size limit
@@ -275,22 +337,19 @@ MB, and compiling that into a regexp overflows Emacs's pattern-size limit
 small, constant link tail \(an optional `][desc]' before the closing
 `]]') is matched as a regexp."
   (save-excursion
-    (save-restriction
-      (org-back-to-heading t)
-      (org-narrow-to-subtree)
-      (dolist (pair map)
-        (let ((needle (concat "[[" (car pair)))
-              (repl   (concat "[[attachment:" (cdr pair) "]]")))
-          (goto-char (point-min))
-          (while (search-forward needle nil t)
-            ;; Point now sits just past the URL.  Accept the bare `]]' close
-            ;; or an optional `][desc]' first; both forms span from the `[['
-            ;; (BEG) to the end of this constant tail match.
-            (let ((beg (match-beginning 0)))
-              (when (looking-at "\\(?:\\]\\[[^]]*\\)?\\]\\]")
-                (delete-region beg (match-end 0))
-                (goto-char beg)
-                (insert repl)))))))))
+    (dolist (pair map)
+      (let ((needle (concat "[[" (car pair)))
+            (repl   (concat "[[attachment:" (cdr pair) "]]")))
+        (goto-char (point-min))
+        (while (search-forward needle nil t)
+          ;; Point now sits just past the URL.  Accept the bare `]]' close
+          ;; or an optional `][desc]' first; both forms span from the `[['
+          ;; (BEG) to the end of this constant tail match.
+          (let ((beg (match-beginning 0)))
+            (when (looking-at "\\(?:\\]\\[[^]]*\\)?\\]\\]")
+              (delete-region beg (match-end 0))
+              (goto-char beg)
+              (insert repl))))))))
 
 (defun org-clipper--sanitize-text (s)
   "Return string S stripped of bytes that force Org to be saved as *raw-text*.
@@ -333,38 +392,48 @@ transport: both the `org-protocol' and HTTP handlers funnel through
     out))
 
 (defun org-clipper--insert-clip (clip)
-  "Insert web-clip plist CLIP into the target file; return the file path.
+  "Write web-clip plist CLIP as a one-file-per-page Org node; return its path.
 Plist keys: :template :url :title :body :tags :author :published
-:description :created :properties (extra drawer props, a keyword-keyed plist).
-Bypasses org-capture; writes a metadata drawer and a fresh :ID:."
+:description :created :properties (extra drawer props, a keyword-keyed plist)
+:images.  If CLIP's URL is already clipped (matched in vulpea by `:SOURCE:'),
+write nothing and return (:duplicate . RELPATH), RELPATH being the existing
+file's path relative to `org-directory'.  Otherwise write a file-level vulpea
+node with a fresh :ID: under `org-clipper-clip-root' and return its path.
+Bypasses org-capture."
   (setq clip (org-clipper--sanitize-clip clip))
-  (let* ((file (org-clipper--capture-target-file))
-         (buf  (find-buffer-visiting file))
-         (tags (org-clipper--merge-tags (plist-get clip :tags))))
-    (with-current-buffer buf
-      (org-with-wide-buffer
-       (let* ((hlevel (or (org-clipper--goto-target-headline) 1))
-              (entry  (org-clipper--format-entry
-                       (1+ hlevel) (plist-get clip :title) tags clip))
-              (pos    (save-excursion
-                        (if org-clipper-prepend
-                            (progn (org-end-of-meta-data t) (point))
-                          (org-end-of-subtree t t)
-                          (unless (bolp) (insert "\n"))
-                          (point)))))
-         (goto-char pos)
-         (insert entry)
-         (goto-char pos)
-         (org-back-to-heading t)
-         (org-id-get-create)
-         (let ((images (plist-get clip :images)))
-           (when images
-             (let ((map (org-clipper--attach-images images)))
-               (when map
-                 (org-clipper--rewrite-image-links map)))))))
-      (save-buffer)
-      (ignore-errors (org-display-inline-images)))
-    file))
+  (let* ((url (plist-get clip :url))
+         (existing (org-clipper--find-by-source url)))
+    (if existing
+        (cons :duplicate (file-relative-name existing org-directory))
+      (let* ((id    (org-id-new))
+             (time  (current-time))
+             (tags  (org-clipper--merge-tags (plist-get clip :tags)))
+             (path  (org-clipper--clip-file-path (plist-get clip :title) url time))
+             (content (org-clipper--clip-file-content
+                       id (plist-get clip :title) url tags clip))
+             (buf (if org-clipper-lean-capture
+                      (let ((org-mode-hook nil) (find-file-hook nil)
+                            (org-inhibit-startup t))
+                        (find-file-noselect path))
+                    (find-file-noselect path))))
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert content)
+          (save-buffer)                 ; vulpea autosync indexes on save
+          (let ((images (plist-get clip :images)))
+            (when images
+              (goto-char (point-min))
+              (let ((map (org-clipper--attach-images images)))
+                (when map
+                  (org-clipper--rewrite-image-links map)
+                  (save-buffer)))))
+          (ignore-errors (org-display-inline-images)))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf (set-buffer-modified-p nil))
+          (kill-buffer buf))
+        (puthash url (file-relative-name path org-directory)
+                 org-clipper--clipped-this-session)
+        path))))
 
 
 ;;; org-protocol sub-protocol
@@ -373,16 +442,19 @@ Bypasses org-capture; writes a metadata drawer and a fresh :ID:."
 
 (defun org-clipper--protocol-capture (info)
   "Handle `org-protocol://org-clipper?...'.  INFO is the raw query string;
-`org-protocol-parse-parameters' percent-decodes each value to UTF-8."
+`org-protocol-parse-parameters' percent-decodes each value to UTF-8.  On a
+duplicate (no browser channel here), echoes the existing path as a message."
   (let* ((p (org-protocol-parse-parameters info t))
          (tags (let ((tg (plist-get p :tags)))
-                 (and tg (split-string tg "[,]+" t "[ \t]+")))))
-    (org-clipper--insert-clip
-     (list :template (plist-get p :template) :url (plist-get p :url)
-           :title (plist-get p :title) :body (or (plist-get p :body) "")
-           :tags tags :author (plist-get p :author)
-           :published (plist-get p :published)
-           :description (plist-get p :description) :created (plist-get p :created)))
+                 (and tg (split-string tg "[,]+" t "[ \t]+"))))
+         (res (org-clipper--insert-clip
+               (list :template (plist-get p :template) :url (plist-get p :url)
+                     :title (plist-get p :title) :body (or (plist-get p :body) "")
+                     :tags tags :author (plist-get p :author)
+                     :published (plist-get p :published)
+                     :description (plist-get p :description) :created (plist-get p :created)))))
+    (when (and (consp res) (eq (car res) :duplicate))
+      (message "org-clipper: already clipped → %s" (cdr res)))
     nil))
 
 (add-to-list 'org-protocol-protocol-alist
@@ -394,31 +466,23 @@ Bypasses org-capture; writes a metadata drawer and a fresh :ID:."
 
 ;;;###autoload
 (defun org-clipper-visit-target ()
-  "Open `org-clipper-target-file', creating it if missing."
+  "Open the clip root directory (`org-clipper-clip-root') in Dired."
   (interactive)
-  (let ((file org-clipper-target-file))
-    (unless (file-exists-p file)
-      (make-directory (file-name-directory file) t)
-      (with-temp-buffer (write-region (point-min) (point-max) file)))
-    (find-file file)
-    (when org-clipper-auto-revert
-      (unless (bound-and-true-p auto-revert-mode)
-        (auto-revert-mode 1)))))
+  (let ((dir org-clipper-clip-root))
+    (unless (file-directory-p dir) (make-directory dir t))
+    (dired dir)))
 
 ;;;###autoload
 (defun org-clipper-refile ()
-  "Refile a clip from `org-clipper-target-file' using `org-refile'.
-If point is already on a heading inside the target file, refile that
-heading.  Otherwise jump to the most recently appended (last) heading."
+  "Refile the clip in the current buffer using `org-refile'.
+If point is on a heading, refile it; otherwise move to the file's first
+heading.  Most useful when the clip file holds a single node."
   (interactive)
-  (let ((in-target
-         (and buffer-file-name
-              (file-equal-p buffer-file-name org-clipper-target-file))))
-    (unless (and in-target (ignore-errors (org-at-heading-p)))
-      (org-clipper-visit-target)
-      (goto-char (point-max))
-      (unless (re-search-backward "^\\* " nil t)
-        (user-error "No clips in %s yet" org-clipper-target-file))))
+  (unless (derived-mode-p 'org-mode) (user-error "Not an Org buffer"))
+  (unless (ignore-errors (org-at-heading-p))
+    (goto-char (point-min))
+    (unless (re-search-forward "^\\*+ " nil t)
+      (user-error "No heading to refile in %s" (or buffer-file-name "this buffer"))))
   (org-refile))
 
 
@@ -431,7 +495,8 @@ heading.  Otherwise jump to the most recently appended (last) heading."
 ;; (a custom header forces a CORS preflight websites cannot satisfy; a local
 ;; process would still need the secret), an Origin allow-check, a body-size
 ;; cap, and the payload is treated strictly as data.  Response is sent only
-;; AFTER the clip is saved (accurate success/failure; no silent loss).
+;; AFTER the clip is saved (accurate success/failure; no silent loss).  A
+;; duplicate is reported as HTTP 200 with {"ok":true,"duplicate":true,"path":…}.
 
 (defcustom org-clipper-http-port 17654
   "TCP port for the local HTTP capture endpoint (bound to 127.0.0.1)."
@@ -485,20 +550,21 @@ bytes, or (:toobig N) when Content-Length exceeds `org-clipper-http-max-body'."
 
 (defun org-clipper--http-handle (headers body-bytes)
   "Validate request (HEADERS string + BODY-BYTES unibyte) and, if OK, insert
-the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
+the clip.  Return (CODE MESSAGE &optional EXTRA-PLIST); EXTRA carries
+\(:duplicate t :path REL) for a duplicate.  Treats the payload strictly as data."
   (let ((case-fold-search t))
     (cond
      ((not (string-match "\\`POST[ \t]+/capture\\(?:[ \t?]\\|\\'\\)" headers))
-      (cons 404 "not found"))
+      (list 404 "not found"))
      ((let ((tok (and (string-match "^x-org-clipper-token:[ \t]*\\([^\r\n]*\\)" headers)
                       (string-trim (match-string 1 headers)))))
         (not (and tok (> (length tok) 0) (string= tok (org-clipper--http-token)))))
-      (cons 403 "bad token"))
+      (list 403 "bad token"))
      ((let ((origin (and (string-match "^origin:[ \t]*\\([^\r\n]*\\)" headers)
                          (string-trim (match-string 1 headers)))))
         (and origin (> (length origin) 0)
              (not (string-prefix-p "chrome-extension://" origin))))
-      (cons 403 "bad origin"))
+      (list 403 "bad origin"))
      (t
       (condition-case e
           (let* ((json (decode-coding-string body-bytes 'utf-8))
@@ -514,17 +580,26 @@ the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
                              :images (plist-get p :images))))
             (unless (and (plist-get clip :url) (> (length (plist-get clip :url)) 0))
               (error "missing url"))
-            (org-clipper--insert-clip clip)   ; saves -> ACK-after-save
-            (cons 200 "ok"))
-        (error (cons 500 (error-message-string e))))))))
+            (let ((res (org-clipper--insert-clip clip)))  ; saves -> ACK-after-save
+              (if (and (consp res) (eq (car res) :duplicate))
+                  (list 200 "duplicate" (list :duplicate t :path (cdr res)))
+                (list 200 "ok"))))
+        (error (list 500 (error-message-string e))))))))
 
-(defun org-clipper--http-respond (proc code message)
-  "Write an HTTP response to PROC and close it."
+(defun org-clipper--http-respond (proc code message &optional extra)
+  "Write an HTTP response to PROC and close it.
+EXTRA is an optional plist; (:duplicate t :path REL) emits a 200 body of
+{\"ok\":true,\"duplicate\":true,\"path\":REL}."
   (let* ((okp (= code 200))
          (reason (pcase code (200 "OK") (403 "Forbidden") (404 "Not Found")
                         (413 "Payload Too Large") (_ "Internal Server Error")))
          (msg (replace-regexp-in-string "[\"\\\n\r\t]" " " (format "%s" message)))
-         (json (if okp "{\"ok\":true}" (format "{\"ok\":false,\"error\":\"%s\"}" msg)))
+         (json (cond
+                ((and okp (plist-get extra :duplicate))
+                 (json-serialize (list :ok t :duplicate t
+                                       :path (or (plist-get extra :path) ""))))
+                (okp "{\"ok\":true}")
+                (t (format "{\"ok\":false,\"error\":\"%s\"}" msg))))
          (body (encode-coding-string json 'utf-8))
          (head (format (concat "HTTP/1.1 %d %s\r\nContent-Type: application/json; charset=utf-8\r\n"
                                "Connection: close\r\nContent-Length: %d\r\n\r\n")
@@ -541,7 +616,7 @@ the clip.  Return (CODE . MESSAGE).  Treats the payload strictly as data."
     (`(:toobig . ,_) (org-clipper--http-respond proc 413 "payload too large"))
     (`(:complete ,headers ,body)
      (let ((res (org-clipper--http-handle headers body)))
-       (org-clipper--http-respond proc (car res) (cdr res))))
+       (org-clipper--http-respond proc (nth 0 res) (nth 1 res) (nth 2 res))))
     (_ nil)))
 
 ;;;###autoload

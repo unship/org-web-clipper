@@ -16,22 +16,97 @@
   (should (equal (org-clipper--tags-string '("a" "b")) ":a:b:"))
   (should (equal (org-clipper--tags-string nil) "")))
 
-(ert-deftest org-clipper-test-format-entry-full ()
-  (let ((org-clipper-default-tags '("clippings"))
-        (txt (org-clipper--format-entry
-              2 "Lock-Free Ring Buffer"
-              '("clippings" "rust")
-              (list :url "https://x/p" :author "David Rosa"
-                    :published "" :description "A SPSC queue."
+
+;;; --- one-file-per-clip: slug + bucket path ---
+
+(ert-deftest org-clipper-test-slug-ascii ()
+  (should (equal (org-clipper--slug "Lock-Free Ring Buffer!" "u") "lock-free-ring-buffer")))
+
+(ert-deftest org-clipper-test-slug-unicode-preserved ()
+  ;; CJK letters survive; spaces/punctuation collapse to single hyphens.
+  (should (equal (org-clipper--slug "中文 标题 Foo" "u") "中文-标题-foo")))
+
+(ert-deftest org-clipper-test-slug-empty-falls-back-to-host ()
+  (should (equal (org-clipper--slug "!!!" "https://example.com/x?y=1") "example-com")))
+
+(ert-deftest org-clipper-test-slug-empty-falls-back-to-untitled ()
+  (should (equal (org-clipper--slug "" "") "untitled"))
+  (should (equal (org-clipper--slug "   " nil) "untitled")))
+
+(ert-deftest org-clipper-test-slug-truncates ()
+  (let ((org-clipper-filename-max-slug 5))
+    (should (<= (length (org-clipper--slug "abcdefghij" "u")) 5))))
+
+(ert-deftest org-clipper-test-bucket-dir-date-layout ()
+  (let* ((root (make-temp-file "oc-bucket-" t))
+         (org-clipper-clip-root root)
+         (time (encode-time 0 0 12 26 6 2026)))
+    (unwind-protect
+        (let ((dir (org-clipper--bucket-dir time)))
+          (should (string-suffix-p "2026-06/2026-06-26/" (file-name-as-directory dir)))
+          (should (file-directory-p dir)))
+      (delete-directory root t))))
+
+(ert-deftest org-clipper-test-unique-clip-file-suffixes-collision ()
+  (let ((dir (make-temp-file "oc-uniq-" t)))
+    (unwind-protect
+        (let ((p1 (org-clipper--unique-clip-file dir "foo")))
+          (should (string-suffix-p "/foo.org" p1))
+          (write-region "" nil p1)
+          (should (string-suffix-p "/foo-2.org" (org-clipper--unique-clip-file dir "foo"))))
+      (delete-directory dir t))))
+
+
+;;; --- clip-file-content (file-level node) ---
+
+(ert-deftest org-clipper-test-clip-file-content-full ()
+  (let ((txt (org-clipper--clip-file-content
+              "ID-1" "Lock-Free Ring Buffer" "https://x/p" '("clippings" "rust")
+              (list :author "David Rosa" :published "" :description "A SPSC queue."
                     :created "2026-03-28" :body "** body\ntext"))))
-    (should (string-match-p "\\`\\*\\* Lock-Free Ring Buffer  :clippings:rust:\n" txt))
-    (should (string-match-p ":PROPERTIES:\n" txt))
+    (should (string-prefix-p ":PROPERTIES:\n" txt))
+    (should (string-match-p "^:ID: ID-1$" txt))
     (should (string-match-p "^:SOURCE: https://x/p$" txt))
     (should (string-match-p "^:AUTHOR: David Rosa$" txt))
     (should (string-match-p "^:CREATED: <2026-03-28>$" txt))
     (should (string-match-p "^:DESCRIPTION: A SPSC queue.$" txt))
-    (should-not (string-match-p ":PUBLISHED:" txt))   ; empty omitted
-    (should (string-suffix-p "** body\ntext\n" txt))))
+    (should-not (string-match-p ":PUBLISHED:" txt))           ; empty omitted
+    (should (string-match-p "^#\\+title: Lock-Free Ring Buffer$" txt))
+    (should (string-match-p "^#\\+filetags: :clippings:rust:$" txt))
+    (should-not (string-match-p "^\\* Web clips$" txt))        ; no grouping heading
+    (should (string-match-p "^\\* body\ntext\n" txt))))        ; body re-leveled to level 1
+
+(ert-deftest org-clipper-test-clip-file-content-author-always-present ()
+  ;; AUTHOR is written even when absent (empty value, no trailing space).
+  (let ((txt (org-clipper--clip-file-content
+              "ID" "T" "u" '("clippings") (list :created "2026-03-28" :body "x"))))
+    (should (string-match-p "^:AUTHOR:$" txt))))
+
+(ert-deftest org-clipper-test-clip-file-content-published-and-created-active ()
+  (let ((txt (org-clipper--clip-file-content
+              "ID" "T" "u" '("clippings")
+              (list :published "2024-01-15T08:00:00.000Z" :created "2026-03-28" :body "x"))))
+    (should (string-match-p "^:PUBLISHED: <2024-01-15>$" txt))
+    (should (string-match-p "^:CREATED: <2026-03-28>$" txt))))
+
+(ert-deftest org-clipper-test-clip-file-content-extra-properties ()
+  "Non-standard template properties land in the drawer, after the standard keys."
+  (let ((txt (org-clipper--clip-file-content
+              "ID" "T" "https://x" '("clippings")
+              (list :created "2026-03-28" :body "x"
+                    :properties '(:READING_TIME "5 min" :SECTION "News")))))
+    (should (string-match-p "^:READING_TIME: 5 min$" txt))
+    (should (string-match-p "^:SECTION: News$" txt))
+    (should (string-match-p "^:SOURCE: https://x$" txt))
+    (should (< (string-match ":SOURCE:" txt) (string-match ":READING_TIME:" txt)))))
+
+(ert-deftest org-clipper-test-clip-file-content-skips-empty-extra-properties ()
+  (let ((txt (org-clipper--clip-file-content
+              "ID" "T" "u" nil
+              (list :created "2026-03-28" :body "x"
+                    :properties '(:EMPTY "" :KEEP "v")))))
+    (should-not (string-match-p ":EMPTY:" txt))
+    (should (string-match-p "^:KEEP: v$" txt))))
 
 (ert-deftest org-clipper-test-created-defaults-to-today ()
   (should (string-match-p "\\`<[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
@@ -55,33 +130,6 @@
   ;; No parseable date => keep the raw value rather than fabricate a stamp.
   (should (equal (org-clipper--published-stamp "  sometime in 2024 ") "sometime in 2024")))
 
-(ert-deftest org-clipper-test-format-entry-published-and-created-active ()
-  (let ((txt (org-clipper--format-entry
-              2 "T" '("clippings")
-              (list :url "u" :published "2024-01-15T08:00:00.000Z"
-                    :created "2026-03-28" :body "x"))))
-    (should (string-match-p "^:PUBLISHED: <2024-01-15>$" txt))
-    (should (string-match-p "^:CREATED: <2026-03-28>$" txt))))
-
-(ert-deftest org-clipper-test-format-entry-extra-properties ()
-  "Non-standard template properties land in the drawer, after the standard keys."
-  (let ((txt (org-clipper--format-entry
-              2 "T" '("clippings")
-              (list :url "https://x" :created "2026-03-28" :body "x"
-                    :properties '(:READING_TIME "5 min" :SECTION "News")))))
-    (should (string-match-p "^:READING_TIME: 5 min$" txt))
-    (should (string-match-p "^:SECTION: News$" txt))
-    (should (string-match-p "^:SOURCE: https://x$" txt))
-    (should (< (string-match ":SOURCE:" txt) (string-match ":READING_TIME:" txt)))))
-
-(ert-deftest org-clipper-test-format-entry-skips-empty-extra-properties ()
-  (let ((txt (org-clipper--format-entry
-              2 "T" nil
-              (list :url "u" :created "2026-03-28" :body "x"
-                    :properties '(:EMPTY "" :KEEP "v")))))
-    (should-not (string-match-p ":EMPTY:" txt))
-    (should (string-match-p "^:KEEP: v$" txt))))
-
 (ert-deftest org-clipper-test-sanitize-clip-strips-control-chars-from-properties ()
   (let ((out (org-clipper--sanitize-clip
               (list :title "t"
@@ -97,63 +145,87 @@
                   (concat "你好" (string 0) (string #x3fff85) "世界"))
                  "你好世界")))
 
-(ert-deftest org-clipper-test-capture-target-buffer-is-lean-and-reused ()
-  (let* ((tmp (make-temp-file "oc-t" nil ".org"))
-         (org-clipper-target-file tmp)
-         (sentinel-ran nil)
-         (org-mode-hook (list (lambda () (setq sentinel-ran t)))))
-    (unwind-protect
-        (let ((f1 (org-clipper--capture-target-file)))
-          (should (equal f1 tmp))
-          (should (find-buffer-visiting tmp))          ; opened + kept alive
-          (should-not sentinel-ran)                    ; org-mode-hook suppressed
-          (let ((b (find-buffer-visiting tmp)))
-            (should (eq b (progn (org-clipper--capture-target-file)
-                                 (find-buffer-visiting tmp))))))  ; reused
-      (let ((b (find-buffer-visiting tmp)))
-        (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
-      (delete-file tmp))))
 
-(defun org-clipper-test--with-target (fn)
-  (let* ((tmp (make-temp-file "oc-i" nil ".org"))
-         (org-clipper-target-file tmp)
-         (org-clipper-default-tags '("clippings")))
-    (unwind-protect (funcall fn tmp)
-      (let ((b (find-buffer-visiting tmp)))
-        (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
-      (delete-file tmp))))
+;;; --- insert-clip (writes one file-level node per page) ---
 
-(ert-deftest org-clipper-test-insert-clip-writes-metadata-and-id ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (org-clipper--insert-clip
-      (list :title "中文标题 café ☕" :url "https://x/测试"
-            :author "David Rosa" :description "Desc." :created "2026-03-28"
-            :tags '("rust") :body "*** sec\n你好,世界 😀"))
-     (with-temp-buffer
-       (insert-file-contents tmp)
-       (let ((s (buffer-string)))
-         (should (string-match-p "^\\* Web clips$" s))
-         (should (string-match-p "^\\*\\* 中文标题 café ☕  :clippings:rust:$" s))
-         (should (string-match-p "^:ID: +[-0-9a-fA-F]+$" s))
-         (should (string-match-p "^:SOURCE: https://x/测试$" s))
-         (should (string-match-p "^:AUTHOR: David Rosa$" s))
-         (should (string-match-p "你好,世界 😀" s)))))))
+(defun org-clipper-test--with-clip-root (fn)
+  "Run FN with a fresh temp clip-root dir and an empty session-dedup table.
+FN receives the root dir.  `org-directory' is also bound to the root so clip
+paths report cleanly relative to it.  Cleans up afterward."
+  (let* ((root (make-temp-file "oc-root-" t))
+         (org-clipper-clip-root root)
+         (org-directory root)
+         (org-clipper-default-tags '("clippings"))
+         (org-clipper--clipped-this-session (make-hash-table :test 'equal))
+         (org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
+    (unwind-protect (funcall fn root)
+      (dolist (b (buffer-list))
+        (when (and (buffer-file-name b)
+                   (string-prefix-p (expand-file-name root)
+                                    (expand-file-name (buffer-file-name b))))
+          (with-current-buffer b (set-buffer-modified-p nil))
+          (kill-buffer b)))
+      (ignore-errors (delete-directory root t)))))
 
-(ert-deftest org-clipper-test-insert-clip-prepends-newest-first ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
+(defun org-clipper-test--only-clip-file (root)
+  "Return the path of the single .org clip written under ROOT (or nil)."
+  (car (directory-files-recursively root "\\.org\\'")))
+
+(ert-deftest org-clipper-test-insert-clip-writes-file-level-node ()
+  (org-clipper-test--with-clip-root
+   (lambda (_root)
+     (let ((path (org-clipper--insert-clip
+                  (list :title "中文标题 café ☕" :url "https://x/测试"
+                        :author "David Rosa" :description "Desc." :created "2026-03-28"
+                        :tags '("rust") :body "*** sec\n你好,世界 😀"))))
+       (should (stringp path))
+       (should (string-match-p "/[0-9]\\{4\\}-[0-9]\\{2\\}/[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}/[^/]+\\.org\\'" path))
+       (with-temp-buffer
+         (insert-file-contents path)
+         (let ((s (buffer-string)))
+           (should-not (string-match-p "^\\* Web clips$" s))            ; no grouping
+           (should (string-match-p "^:ID: +[-0-9a-fA-F]+$" s))
+           (should (string-match-p "^:SOURCE: https://x/测试$" s))
+           (should (string-match-p "^:AUTHOR: David Rosa$" s))
+           (should (string-match-p "^#\\+title: 中文标题 café ☕$" s))
+           (should (string-match-p "^#\\+filetags: :clippings:rust:$" s))
+           (should (string-match-p "^\\* sec$" s))                      ; body at level 1
+           (should (string-match-p "你好,世界 😀" s))))))))
+
+(ert-deftest org-clipper-test-insert-clip-body-headings-contiguous ()
+  (org-clipper-test--with-clip-root
+   (lambda (_root)
+     (let ((path (org-clipper--insert-clip
+                  (list :title "T" :url "u" :body "** Sec\n\nx\n\n**** Deep"))))
+       (with-temp-buffer
+         (insert-file-contents path)
+         (let ((s (buffer-string)))
+           (should (string-match-p "^\\* Sec$" s))             ; body shallowest -> level 1
+           (should (string-match-p "^\\*\\* Deep$" s))          ; gap 2->4 compressed to 1->2
+           (should-not (string-match-p "^\\*\\*\\* " s))))))))  ; no level-3
+
+(ert-deftest org-clipper-test-insert-clip-dedup-skips-same-source ()
+  (org-clipper-test--with-clip-root
+   (lambda (root)
+     (let ((p1 (org-clipper--insert-clip (list :title "A" :url "https://x/dup" :body "a"))))
+       (should (stringp p1))
+       (let ((p2 (org-clipper--insert-clip (list :title "A again" :url "https://x/dup" :body "b"))))
+         (should (consp p2))
+         (should (eq (car p2) :duplicate))
+         (should (equal (cdr p2) (file-relative-name p1 org-directory))))
+       ;; only one file was written
+       (should (= 1 (length (directory-files-recursively root "\\.org\\'"))))))))
+
+(ert-deftest org-clipper-test-insert-clip-distinct-sources-both-written ()
+  (org-clipper-test--with-clip-root
+   (lambda (root)
      (org-clipper--insert-clip (list :title "First" :url "u1" :body "b1"))
      (org-clipper--insert-clip (list :title "Second" :url "u2" :body "b2"))
-     (with-temp-buffer
-       (insert-file-contents tmp)
-       (goto-char (point-min))
-       (re-search-forward "^\\*\\* \\(First\\|Second\\)")
-       (should (equal (match-string 1) "Second"))))))   ; newest on top
+     (should (= 2 (length (directory-files-recursively root "\\.org\\'")))))))
 
 (ert-deftest org-clipper-test-protocol-capture-decodes-and-inserts ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
+  (org-clipper-test--with-clip-root
+   (lambda (root)
      (let ((info (concat "template=w"
                          "&url=" (url-hexify-string "https://x/测试")
                          "&title=" (url-hexify-string "标题 ☕")
@@ -162,9 +234,10 @@
                          "&body=" (url-hexify-string "*** s\n你好"))))
        (org-clipper--protocol-capture info)
        (with-temp-buffer
-         (insert-file-contents tmp)
+         (insert-file-contents (org-clipper-test--only-clip-file root))
          (let ((s (buffer-string)))
-           (should (string-match-p "^\\*\\* 标题 ☕  :clippings:rust:$" s))
+           (should (string-match-p "^#\\+title: 标题 ☕$" s))
+           (should (string-match-p "^#\\+filetags: :clippings:rust:$" s))
            (should (string-match-p "^:SOURCE: https://x/测试$" s))
            (should (string-match-p "^:AUTHOR: David Rosa$" s))
            (should (string-match-p "你好" s))))))))
@@ -192,18 +265,6 @@
 (ert-deftest org-clipper-test-relevel-ignores-src-blocks ()
   (should (equal (org-clipper--relevel-body "** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC" 3)
                  "*** H\n#+BEGIN_SRC org\n** not-a-heading\n#+END_SRC")))
-
-(ert-deftest org-clipper-test-insert-clip-headings-contiguous ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (org-clipper--insert-clip (list :title "T" :url "u" :body "** Sec\n\nx\n\n**** Deep"))
-     (with-temp-buffer
-       (insert-file-contents tmp)
-       (let ((s (buffer-string)))
-         (should (string-match-p "^\\*\\* T " s))           ; clip title at level 2
-         (should (string-match-p "^\\*\\*\\* Sec$" s))       ; body starts at level 3
-         (should (string-match-p "^\\*\\*\\*\\* Deep$" s))   ; gap 2->4 compressed to 3->4
-         (should-not (string-match-p "^\\*\\*\\*\\*\\* " s))))))) ; no level-5
 
 
 ;;; --- Phase 2: HTTP transport ---
@@ -239,8 +300,8 @@
 
 (ert-deftest org-clipper-test-http-handle-valid-inserts-with-gapless-levels ()
   (org-clipper-test--with-token
-   (org-clipper-test--with-target
-    (lambda (tmp)
+   (org-clipper-test--with-clip-root
+    (lambda (root)
       (let* ((tok (org-clipper--http-token))
              (json (json-serialize '(:template "w" :url "https://x/测试" :title "标题 ☕"
                                      :tags ["clippings" "rust"] :author "Rosa"
@@ -251,27 +312,28 @@
                               "Origin: chrome-extension://abc\r\n"
                               "Content-Length: " (number-to-string (length body)) "\r\n"))
              (res (org-clipper--http-handle headers body)))
-        (should (= 200 (car res)))
+        (should (= 200 (nth 0 res)))
         (with-temp-buffer
-          (insert-file-contents tmp)
+          (insert-file-contents (org-clipper-test--only-clip-file root))
           (let ((s (buffer-string)))
-            (should (string-match-p "^\\*\\* 标题 ☕  :clippings:rust:$" s))
+            (should (string-match-p "^#\\+title: 标题 ☕$" s))
+            (should (string-match-p "^#\\+filetags: :clippings:rust:$" s))
             (should (string-match-p "^:AUTHOR: Rosa$" s))
             (should (string-match-p "^:SOURCE: https://x/测试$" s))
-            (should (string-match-p "^\\*\\*\\* 引言$" s))       ; base = clip-level+1 = 3
-            (should (string-match-p "^\\*\\*\\*\\* 深入$" s))     ; gap 2->4 compressed
-            (should-not (string-match-p "^\\*\\*\\*\\*\\* " s)))))))))
+            (should (string-match-p "^\\* 引言$" s))            ; body base = 1
+            (should (string-match-p "^\\*\\* 深入$" s))          ; gap 2->4 compressed to 1->2
+            (should-not (string-match-p "^\\*\\*\\* " s)))))))))
 
 (ert-deftest org-clipper-test-http-handle-bad-token-no-insert ()
   (org-clipper-test--with-token
-   (org-clipper-test--with-target
-    (lambda (tmp)
+   (org-clipper-test--with-clip-root
+    (lambda (root)
       (org-clipper--http-token)         ; generate the real token (differs from WRONG)
       (let* ((body (encode-coding-string "{\"url\":\"x\"}" 'utf-8))
              (headers (concat "POST /capture HTTP/1.1\r\nX-Org-Clipper-Token: WRONG\r\n"
                               "Content-Length: " (number-to-string (length body)) "\r\n")))
-        (should (= 403 (car (org-clipper--http-handle headers body))))
-        (should (equal "" (with-temp-buffer (insert-file-contents tmp) (buffer-string)))))))))
+        (should (= 403 (nth 0 (org-clipper--http-handle headers body))))
+        (should (null (directory-files-recursively root "\\.org\\'"))))))))
 
 (ert-deftest org-clipper-test-http-handle-website-origin-rejected ()
   (org-clipper-test--with-token
@@ -280,7 +342,51 @@
           (headers (concat "POST /capture HTTP/1.1\r\nX-Org-Clipper-Token: " tok "\r\n"
                            "Origin: https://evil.example\r\n"
                            "Content-Length: " (number-to-string (length body)) "\r\n")))
-     (should (= 403 (car (org-clipper--http-handle headers body)))))))
+     (should (= 403 (nth 0 (org-clipper--http-handle headers body)))))))
+
+(ert-deftest org-clipper-test-http-handle-duplicate-returns-extra ()
+  ;; A second clip of an already-clipped URL yields a 200 with the dup extra.
+  (org-clipper-test--with-token
+   (org-clipper-test--with-clip-root
+    (lambda (_root)
+      (org-clipper--insert-clip (list :title "A" :url "https://x/dup" :body "a"))
+      (let* ((tok (org-clipper--http-token))
+             (json (json-serialize '(:template "w" :url "https://x/dup" :title "again" :body "b")))
+             (body (encode-coding-string json 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "X-Org-Clipper-Token: " tok "\r\n"
+                              "Origin: chrome-extension://abc\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n"))
+             (res (org-clipper--http-handle headers body)))
+        (should (= 200 (nth 0 res)))
+        (should (plist-get (nth 2 res) :duplicate))
+        (should (stringp (plist-get (nth 2 res) :path))))))))
+
+(ert-deftest org-clipper-test-duplicate-json-shape ()
+  ;; Locks the on-the-wire contract the extension popup parses.
+  (should (equal (json-serialize '(:ok t :duplicate t :path "inbox/x.org"))
+                 "{\"ok\":true,\"duplicate\":true,\"path\":\"inbox/x.org\"}")))
+
+(ert-deftest org-clipper-test-http-max-body-raised ()
+  (should (>= org-clipper-http-max-body (* 128 1024 1024))))
+
+(ert-deftest org-clipper-test-http-handle-writes-extra-properties ()
+  (org-clipper-test--with-token
+   (org-clipper-test--with-clip-root
+    (lambda (root)
+      (let* ((tok (org-clipper--http-token))
+             (json (json-serialize '(:template "w" :url "https://x" :title "T"
+                                     :body "x" :properties (:READING_TIME "5 min"))))
+             (body (encode-coding-string json 'utf-8))
+             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "X-Org-Clipper-Token: " tok "\r\n"
+                              "Origin: chrome-extension://abc\r\n"
+                              "Content-Length: " (number-to-string (length body)) "\r\n"))
+             (res (org-clipper--http-handle headers body)))
+        (should (= 200 (nth 0 res)))
+        (with-temp-buffer
+          (insert-file-contents (org-clipper-test--only-clip-file root))
+          (should (string-match-p "^:READING_TIME: 5 min$" (buffer-string)))))))))
 
 
 ;;; --- Phase 3: image attachments ---
@@ -289,34 +395,36 @@
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 
 (ert-deftest org-clipper-test-attach-images-writes-and-maps ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
-       (with-current-buffer (find-file-noselect tmp)
-         (let ((org-mode-hook nil)) (org-mode))
-         (goto-char (point-max)) (insert "* clip\n") (org-back-to-heading t)
-         (org-id-get-create)
-         (let ((map (org-clipper--attach-images
-                     (list (list :url "https://x/a.png" :filename "a.png"
-                                 :contentType "image/png" :dataBase64 org-clipper-test--png)))))
-           (should (equal map '(("https://x/a.png" . "a.png"))))
-           (should (file-exists-p (expand-file-name "a.png" (org-attach-dir))))
-           (should (> (file-attribute-size (file-attributes (expand-file-name "a.png" (org-attach-dir)))) 0)))
-         (set-buffer-modified-p nil))))))
+  (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
+        (tmp (make-temp-file "oc-att" nil ".org")))
+    (unwind-protect
+        (with-current-buffer (find-file-noselect tmp)
+          (let ((org-mode-hook nil)) (org-mode))
+          (goto-char (point-max)) (insert "* clip\n") (org-back-to-heading t)
+          (org-id-get-create)
+          (let ((map (org-clipper--attach-images
+                      (list (list :url "https://x/a.png" :filename "a.png"
+                                  :contentType "image/png" :dataBase64 org-clipper-test--png)))))
+            (should (equal map '(("https://x/a.png" . "a.png"))))
+            (should (file-exists-p (expand-file-name "a.png" (org-attach-dir))))
+            (should (> (file-attribute-size (file-attributes (expand-file-name "a.png" (org-attach-dir)))) 0)))
+          (set-buffer-modified-p nil))
+      (let ((b (find-buffer-visiting tmp)))
+        (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
+      (delete-file tmp))))
 
 (ert-deftest org-clipper-test-insert-clip-embeds-images ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
-       (org-clipper--insert-clip
-        (list :title "T" :url "u"
-              :body "[[https://x/a.png]] and [[https://x/missing.png]]"
-              :images (list (list :url "https://x/a.png" :filename "a.png"
-                                  :contentType "image/png" :dataBase64 org-clipper-test--png))))
+  (org-clipper-test--with-clip-root
+   (lambda (_root)
+     (let ((path (org-clipper--insert-clip
+                  (list :title "T" :url "u"
+                        :body "[[https://x/a.png]] and [[https://x/missing.png]]"
+                        :images (list (list :url "https://x/a.png" :filename "a.png"
+                                            :contentType "image/png" :dataBase64 org-clipper-test--png))))))
        (with-temp-buffer
-         (insert-file-contents tmp)
+         (insert-file-contents path)
          (let ((s (buffer-string)))
-           (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))        ; embedded
+           (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))         ; embedded
            (should (string-match-p "\\[\\[https://x/missing.png\\]\\]" s))))))))  ; unmapped stays remote
 
 ;; Regression: a clipped inline SVG rasterizes to a `data:image/...;base64,'
@@ -325,31 +433,27 @@
 ;; under 50 KB, so that signals `invalid-regexp' ("Regular expression too big"),
 ;; which the HTTP handler surfaces as `HTTP 500'.  Use a literal search instead.
 (ert-deftest org-clipper-test-insert-clip-rewrites-long-data-uri-image ()
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (let* ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
-            ;; 60 KB data URL — past the compiled-pattern limit (~32-50 KB).
-            (url (concat "data:image/png;base64," (make-string 60000 ?A))))
-       (org-clipper--insert-clip
-        (list :title "T" :url "u"
-              :body (concat "see [[" url "]] here")
-              :images (list (list :url url :filename "img.png"
-                                  :contentType "image/png" :dataBase64 org-clipper-test--png))))
+  (org-clipper-test--with-clip-root
+   (lambda (_root)
+     (let* ((url (concat "data:image/png;base64," (make-string 60000 ?A)))  ; 60 KB
+            (path (org-clipper--insert-clip
+                   (list :title "T" :url "u"
+                         :body (concat "see [[" url "]] here")
+                         :images (list (list :url url :filename "img.png"
+                                             :contentType "image/png" :dataBase64 org-clipper-test--png))))))
        (with-temp-buffer
-         (insert-file-contents tmp)
+         (insert-file-contents path)
          (let ((s (buffer-string)))
            (should (string-match-p "\\[\\[attachment:img.png\\]\\]" s))   ; rewritten
            (should-not (string-match-p "data:image/png" s))))))))          ; inline data URL gone
 
 ;; Regression: the HTTP handler must thread :images from the JSON payload
-;; through to --insert-clip so links are actually rewritten.  A direct
-;; --insert-clip call masks a dropped :images key in --http-handle.
+;; through to --insert-clip so links are actually rewritten.
 (ert-deftest org-clipper-test-http-handle-embeds-images ()
   (org-clipper-test--with-token
-   (org-clipper-test--with-target
-    (lambda (tmp)
-      (let* ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
-             (tok (org-clipper--http-token))
+   (org-clipper-test--with-clip-root
+    (lambda (root)
+      (let* ((tok (org-clipper--http-token))
              (json (json-serialize
                     `(:template "w" :url "https://x/p" :title "img test"
                       :body "[[https://x/a.png]] and [[https://x/missing.png]]"
@@ -361,37 +465,13 @@
                               "Origin: chrome-extension://abc\r\n"
                               "Content-Length: " (number-to-string (length body)) "\r\n"))
              (res (org-clipper--http-handle headers body)))
-        (should (= 200 (car res)))
+        (should (= 200 (nth 0 res)))
         (with-temp-buffer
-          (insert-file-contents tmp)
+          (insert-file-contents (org-clipper-test--only-clip-file root))
           (let ((s (buffer-string)))
             (should (string-match-p "\\[\\[attachment:a.png\\]\\]" s))         ; embedded
             (should (string-match-p "\\[\\[https://x/missing.png\\]\\]" s))     ; unmapped stays remote
             (should-not (string-match-p "\\[\\[https://x/a.png\\]\\]" s)))))))))  ; rewritten away
-
-(ert-deftest org-clipper-test-http-max-body-raised ()
-  (should (>= org-clipper-http-max-body (* 128 1024 1024))))
-
-;; Hybrid payload: the extension sends standard fields plus a `properties`
-;; object of non-standard template props; the handler must thread it through
-;; so they appear in the drawer.
-(ert-deftest org-clipper-test-http-handle-writes-extra-properties ()
-  (org-clipper-test--with-token
-   (org-clipper-test--with-target
-    (lambda (tmp)
-      (let* ((tok (org-clipper--http-token))
-             (json (json-serialize '(:template "w" :url "https://x" :title "T"
-                                     :body "x" :properties (:READING_TIME "5 min"))))
-             (body (encode-coding-string json 'utf-8))
-             (headers (concat "POST /capture HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-                              "X-Org-Clipper-Token: " tok "\r\n"
-                              "Origin: chrome-extension://abc\r\n"
-                              "Content-Length: " (number-to-string (length body)) "\r\n"))
-             (res (org-clipper--http-handle headers body)))
-        (should (= 200 (car res)))
-        (with-temp-buffer
-          (insert-file-contents tmp)
-          (should (string-match-p "^:READING_TIME: 5 min$" (buffer-string)))))))))
 
 
 ;;;; ===== remote-image localize (migrated from doom config) =====
@@ -476,10 +556,6 @@
   (should-not (org-clipper--content-type-extension nil)))
 
 ;;;; Regression: match-data hygiene + link collection -----------------------
-;;;; The first run placed every attachment marker at buffer position 1 because
-;;;; `org-clipper--image-url-p' calls `string-match' internally (via
-;;;; `--image-source-url'), clobbering the buffer match data the collection
-;;;; loop read immediately afterwards.
 
 (ert-deftest org-clipper-localize/image-url-p-preserves-match-data ()
   "The predicate must not disturb the caller's match data."
@@ -531,11 +607,6 @@ where lazily-made markers read stale positions and mangled the file."
                      "[[https://b.com/2.png]]")))))
 
 ;;;; data: URL localization (inline base64 images -> attachments) -----------
-;;;; The clip path already rewrites inline `data:' images to attachments at
-;;;; capture time.  The SAME `localize' command must also rescue a `data:' link
-;;;; already sitting in a file (e.g. left by a pre-fix failed clip that 500'd
-;;;; mid-rewrite): decode the base64 locally (no network) and never
-;;;; `regexp-quote' the megabyte-long URL.
 
 (ert-deftest org-clipper-localize/data-url-decodes-base64 ()
   (let ((r (org-clipper--data-url-to-tempfile
@@ -572,17 +643,19 @@ stack-overflow) must still be collected, with its true buffer span."
 (ert-deftest org-clipper-localize/localize-rewrites-inline-data-image ()
   "End-to-end: an inline base64 `data:' image is decoded, attached, and the
 link rewritten to [[attachment:FILE]] — with no network access."
-  (org-clipper-test--with-target
-   (lambda (tmp)
-     (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory))))
-       (with-current-buffer (find-file-noselect tmp)
-         (let ((org-mode-hook nil)) (org-mode))
-         (goto-char (point-max))
-         (insert "* clip\n:PROPERTIES:\n:ID: oc-data-test\n:END:\n"
-                 "see [[data:image/png;base64," org-clipper-test--png "]] here\n")
-         (org-clipper-localize-remote-images (point-min) (point-max))
-         (let ((s (buffer-string)))
-           (should (string-match-p "\\[\\[attachment:image\\.png\\]\\]" s))
-           (should-not (string-match-p "data:image/png" s)))
-         (set-buffer-modified-p nil)
-         (kill-buffer))))))
+  (let ((org-attach-id-dir (make-temp-name (expand-file-name "oc-attach-" temporary-file-directory)))
+        (tmp (make-temp-file "oc-loc" nil ".org")))
+    (unwind-protect
+        (with-current-buffer (find-file-noselect tmp)
+          (let ((org-mode-hook nil)) (org-mode))
+          (goto-char (point-max))
+          (insert "* clip\n:PROPERTIES:\n:ID: oc-data-test\n:END:\n"
+                  "see [[data:image/png;base64," org-clipper-test--png "]] here\n")
+          (org-clipper-localize-remote-images (point-min) (point-max))
+          (let ((s (buffer-string)))
+            (should (string-match-p "\\[\\[attachment:image\\.png\\]\\]" s))
+            (should-not (string-match-p "data:image/png" s)))
+          (set-buffer-modified-p nil))
+      (let ((b (find-buffer-visiting tmp)))
+        (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
+      (delete-file tmp))))

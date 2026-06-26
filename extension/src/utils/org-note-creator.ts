@@ -67,7 +67,7 @@ export function buildCapturePayload(clip: EmacsClip, template: string): CaptureP
   };
 }
 
-export async function saveToEmacs(clip: EmacsClip, cfg: EmacsTransport): Promise<{ ok: true; bytes: number }> {
+export async function saveToEmacs(clip: EmacsClip, cfg: EmacsTransport): Promise<{ ok: true; bytes: number } | { ok: true; duplicate: true; path: string }> {
   const endpoint = (cfg.endpoint || '127.0.0.1:17654').replace(/^https?:\/\//, '');
   const url = `http://${endpoint}/capture`;
   const payload = buildCapturePayload(clip, cfg.template || '');
@@ -97,5 +97,11 @@ export async function saveToEmacs(clip: EmacsClip, cfg: EmacsTransport): Promise
     try { detail = ((await resp.json()) as { error?: string })?.error || ''; } catch { /* ignore */ }
     throw new Error(`Emacs returned HTTP ${resp.status}${detail ? ': ' + detail : ''}`);
   }
+  try {
+    const body = await resp.json() as { ok?: boolean; duplicate?: boolean; path?: string };
+    if (body.duplicate === true && typeof body.path === 'string') {
+      return { ok: true, duplicate: true, path: body.path };
+    }
+  } catch { /* empty / non-JSON body — fall through to normal result */ }
   return { ok: true, bytes: new TextEncoder().encode(JSON.stringify(payload)).length };
 }

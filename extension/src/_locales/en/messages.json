@@ -231,6 +231,9 @@
 	"emacsDefaultTagsDescription": {
 		"message": "Comma-separated tags added to every clip when no tags property is set in the template."
 	},
+	"emacsAlreadyClipped": {
+		"message": "Already clipped → $1"
+	},
 	"edit": {
 		"message": "Edit"
 	},

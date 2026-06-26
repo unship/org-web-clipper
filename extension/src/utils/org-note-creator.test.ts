@@ -63,6 +63,27 @@ describe('saveToEmacs', () => {
     await expect(saveToEmacs({ properties: [], body: 'x', noteName: 'T', behavior: 'create', url: 'u', tags: [] },
       { endpoint: '127.0.0.1:17654', token: '' })).rejects.toThrow(/HTTP 403: bad token/);
   });
+  it('returns {ok,duplicate,path} when Emacs responds with duplicate:true', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, duplicate: true, path: 'inbox/x.org' }),
+    } as any));
+    const result = await saveToEmacs(
+      { properties: [], body: 'x', noteName: 'T', behavior: 'create', url: 'u', tags: [] },
+      { endpoint: '127.0.0.1:17654', token: '' });
+    expect(result).toEqual({ ok: true, duplicate: true, path: 'inbox/x.org' });
+  });
+  it('returns {ok,bytes} for a normal 200 response without duplicate flag', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    } as any));
+    const result = await saveToEmacs(
+      { properties: [], body: 'plain', noteName: 'T', behavior: 'create', url: 'u', tags: [] },
+      { endpoint: '127.0.0.1:17654', token: '' });
+    expect(result).toMatchObject({ ok: true, bytes: expect.any(Number) });
+    expect('duplicate' in result).toBe(false);
+  });
 
   // --- image attachments (HTTP transport) ---
   const TWIMG = 'https://pbs.twimg.com/media/HKAtREzaIAAMlrj?format=jpg&name=large';

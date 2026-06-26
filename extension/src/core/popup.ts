@@ -632,6 +632,16 @@ function clearError(): void {
 	}
 }
 
+/** Show a neutral informational notice above the clipper form (form stays visible). */
+function showInfo(message: string): void {
+	const errorMessage = document.querySelector('.error-message') as HTMLElement;
+	if (errorMessage) {
+		errorMessage.textContent = message;
+		errorMessage.style.display = 'flex';
+		// Do not hide .clipper and do not add has-error — popup stays interactive.
+	}
+}
+
 function logError(message: string, error?: any): void {
 	console.error(message, error);
 	showError(message);
@@ -1342,7 +1352,7 @@ async function handleClipObsidian(): Promise<void> {
 		const noteName = noteNameField?.value || '';
 		const tabInfo = await getCurrentTabInfo();
 		const tagsProp = properties.find(p => p.name === 'tags')?.value || generalSettings.emacsDefaultTags || '';
-		await saveToEmacs(
+		const result = await saveToEmacs(
 			{
 				properties,
 				body: noteContentField.value,
@@ -1357,6 +1367,13 @@ async function handleClipObsidian(): Promise<void> {
 				template: generalSettings.emacsTemplate,
 			},
 		);
+
+		if ('duplicate' in result && result.duplicate) {
+			// Already clipped: show neutral notice, do not close, do not count the stat.
+			showInfo(getMessage('emacsAlreadyClipped', [result.path]));
+			return;
+		}
+
 		await incrementStat('addToObsidian', 'emacs', '', tabInfo.url, tabInfo.title);
 
 		lastSelectedVault = '';
