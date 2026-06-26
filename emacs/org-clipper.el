@@ -141,9 +141,10 @@ left untouched."
 (defun org-clipper--clip-file-content (id title url tags clip)
   "Return the full text of a one-file-per-clip Org node.
 
-A file-level vulpea node: a top `:PROPERTIES:' drawer, then `#+title:',
-`#+filetags:', then CLIP's body re-leveled so its shallowest heading is
-level 1.  Drawer keys ID, SOURCE and AUTHOR are ALWAYS written (AUTHOR as an
+The clip is one HEADLINE subtree: `#+title:'/`#+filetags:' file keywords,
+then a `* TITLE' heading carrying the `:PROPERTIES:' drawer, then CLIP's body
+re-leveled so its shallowest heading is level 2 (nested under the heading).
+Drawer keys ID, SOURCE and AUTHOR are ALWAYS written (AUTHOR as an
 empty value when absent); CREATED is always written; PUBLISHED, DESCRIPTION
 and extra template properties are written only when non-empty.  TAGS is a
 list.  CLIP is the clip plist (see `org-clipper--insert-clip')."
@@ -174,8 +175,18 @@ list.  CLIP is the clip plist (see `org-clipper--insert-clip')."
                   props)))
         (setq extra (cddr extra))))
     (setq props (nreverse props))
-    (let ((body (org-clipper--relevel-body (or (plist-get clip :body) "") 1)))
+    ;; Option A: each clip is one HEADLINE subtree -- `#+title:'/`#+filetags:'
+    ;; file keywords, then a `* TITLE' heading carrying the metadata drawer, with
+    ;; the page body re-leveled to nest beneath it.  A self-contained subtree
+    ;; makes aggregate/split a pure cut-paste and lets org-remark key highlights
+    ;; on the (split-stable) heading Org-ID.
+    (let ((body    (org-clipper--relevel-body (or (plist-get clip :body) "") 2))
+          (heading (string-trim (or title "(untitled)"))))
       (concat
+       "#+title: " heading "\n"
+       "#+filetags: " (org-clipper--tags-string tags) "\n"
+       "\n"
+       "* " heading "\n"
        ":PROPERTIES:\n"
        (mapconcat (lambda (kv)
                     (if (string-empty-p (cdr kv))
@@ -183,9 +194,6 @@ list.  CLIP is the clip plist (see `org-clipper--insert-clip')."
                       (format ":%s: %s" (car kv) (cdr kv))))
                   props "\n")
        "\n:END:\n"
-       "#+title: " (string-trim (or title "(untitled)")) "\n"
-       "#+filetags: " (org-clipper--tags-string tags) "\n"
-       "\n"
        (if (string-suffix-p "\n" body) body (concat body "\n"))))))
 
 
