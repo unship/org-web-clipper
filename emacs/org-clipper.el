@@ -264,19 +264,25 @@ so two rapid clips of the same URL are still deduplicated.")
 (defun org-clipper--find-by-source (url)
   "Return the absolute path of an existing clip whose `:SOURCE:' equals URL, nil
 otherwise.  Checks this session's just-clipped table first (covers autosync
-lag), then queries vulpea.  The `vulpea-db-query' scan is O(notes) (~0.4s at a
-few thousand notes) but runs at most once per clip; correctness is preferred
-over a fragile direct-SQL path."
+lag), then queries vulpea: the indexed `vulpea-db-query-by-property' when
+available (fast), else a portable full `vulpea-db-query' scan (O(notes))."
   (when (and url (> (length url) 0))
     (or (let ((rel (gethash url org-clipper--clipped-this-session)))
           (and rel (expand-file-name rel org-directory)))
-        (and (fboundp 'vulpea-db-query)
-             (let ((hit (seq-find
-                         (lambda (n)
-                           (equal url (cdr (assoc-string
-                                            "SOURCE" (vulpea-note-properties n)))))
-                         (vulpea-db-query))))
-               (and hit (vulpea-note-path hit)))))))
+        ;; Prefer vulpea's indexed property query (O(1)-ish); trust its result
+        ;; so the common no-duplicate case never pays for a full scan.  Fall
+        ;; back to a portable full scan only where that API is unavailable.
+        (cond
+         ((fboundp 'vulpea-db-query-by-property)
+          (let ((hit (car (ignore-errors (vulpea-db-query-by-property "SOURCE" url)))))
+            (and hit (vulpea-note-path hit))))
+         ((fboundp 'vulpea-db-query)
+          (let ((hit (seq-find
+                      (lambda (n)
+                        (equal url (cdr (assoc-string
+                                         "SOURCE" (vulpea-note-properties n)))))
+                      (vulpea-db-query))))
+            (and hit (vulpea-note-path hit))))))))
 
 
 ;;; Capture core
