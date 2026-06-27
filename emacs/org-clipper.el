@@ -436,7 +436,16 @@ Bypasses org-capture."
           (save-buffer)                 ; vulpea autosync indexes on save
           (let ((images (plist-get clip :images)))
             (when images
+              ;; Attach on the clip heading, not the file-level node at
+              ;; point-min.  The heading carries the :ID:, so `org-attach-dir'
+              ;; resolves it via the ID method silently
+              ;; (`org-attach-id-dir'/<bucket>/<id>/).  At point-min the
+              ;; file-level node has neither :ID: nor :DIR:, so org-attach falls
+              ;; back to `org-attach-preferred-new-method' -- which for the 'dir
+              ;; setting pops an interactive `read-directory-name' prompt and
+              ;; writes a per-file :DIR:, derailing unattended capture.
               (goto-char (point-min))
+              (outline-next-heading)
               (let ((map (org-clipper--attach-images images)))
                 (when map
                   (org-clipper--rewrite-image-links map)
