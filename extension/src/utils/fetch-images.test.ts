@@ -87,6 +87,16 @@ describe('fetchImages', () => {
     expect(imgs[0].url).toBe(url);
     expect(atob(imgs[0].dataBase64)).toBe('GIF');
   });
+  it('decodes a data:image url whose base64 contains percent-encoded whitespace (%0A)', async () => {
+    // Defuddle URL-encodes literal newlines inside HTML data: src attributes as %0A.
+    // atob rejects %, so parseDataUrl must strip these before calling atob.
+    const raw = btoa('JPEG');
+    const url = `data:image/jpeg;base64,%0A${raw}`;
+    const imgs = await fetchImages([url], { fetchImpl });
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].url).toBe(url);
+    expect(atob(imgs[0].dataBase64)).toBe('JPEG');
+  });
   it('derives a filename for an extensionless CDN image from its content-type (the twimg case)', async () => {
     const url = 'https://pbs.twimg.com/media/HKAtREzaIAAMlrj?format=jpg&name=large';
     const twImpl = (async () => mk(200, 'image/jpeg', 'JPEGBYTES')) as unknown as typeof fetch;

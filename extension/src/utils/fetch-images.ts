@@ -91,9 +91,17 @@ function parseDataUrl(url: string): FetchedImage | null {
   const m = /^data:([^;,]+)[^,]*,([\s\S]*)$/.exec(url);
   if (!m || !m[1].startsWith('image/')) return null;
   const ct = m[1];
-  const bytes = /;base64/i.test(url.slice(0, url.indexOf(',')))
-    ? Uint8Array.from(atob(m[2]), c => c.charCodeAt(0))
-    : new TextEncoder().encode(decodeURIComponent(m[2]));
+  let bytes: Uint8Array;
+  if (/;base64/i.test(url.slice(0, url.indexOf(',')))) {
+    // Defuddle URL-encodes literal whitespace inside data: src attributes
+    // (e.g. newlines become %0A). atob rejects %, so decode and strip first.
+    const raw = m[2]
+      .replace(/%[0-9A-Fa-f]{2}/g, s => { try { return decodeURIComponent(s); } catch { return ''; } })
+      .replace(/\s+/g, '');
+    bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+  } else {
+    bytes = new TextEncoder().encode(decodeURIComponent(m[2]));
+  }
   return { filename: 'image.' + extFor(ct), contentType: ct, bytes };
 }
 
